@@ -1,0 +1,29 @@
+From 29413574b48c2f12120b65573d28324d74129ee5 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 14 Sep 2025 18:21:14 +0200
+Subject: [PATCH] Align dot instead of section in vmlinux.lds.h
+
+The rudimentary linker script support in wasm-ld does not permit a section
+to be aligned directly. This workaround overcomes that limitation by
+immediately aligning the dot at the start of each section instead.
+---
+ include/asm-generic/vmlinux.lds.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
+index da9e5629e..b331a3947 100644
+--- a/include/asm-generic/vmlinux.lds.h
++++ b/include/asm-generic/vmlinux.lds.h
+@@ -865,7 +865,8 @@
+ /* Built-in firmware blobs */
+ #ifdef CONFIG_FW_LOADER
+ #define FW_LOADER_BUILT_IN_DATA						\
+-	.builtin_fw : AT(ADDR(.builtin_fw) - LOAD_OFFSET) ALIGN(8) {	\
++	. = ALIGN(8);							\
++	.builtin_fw : AT(ADDR(.builtin_fw) - LOAD_OFFSET) {		\
+ 		BOUNDED_SECTION_PRE_LABEL(.builtin_fw, _builtin_fw, __start, __end) \
+ 	}
+ #else
+-- 
+2.25.1
+

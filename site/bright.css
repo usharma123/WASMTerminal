@@ -1,0 +1,51 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+
+body {
+  font-family: sans-serif;
+  letter-spacing: 0.4px;
+  color: black;
+}
+
+h1 {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: 0.9px;
+  margin: 0;
+}
+
+article,
+#terminal {
+  max-width: 50em;
+}
+
+p {
+  margin-top: 0;
+  margin-bottom: 1em;
+}
+
+kbd {
+  color: #222222;
+  background: #dddddd;
+  border: 1px solid #b4b4b4;
+  border-radius: 0.1em;
+  display: inline-block;
+  white-space: nowrap;
+  padding: 0.15em;
+  margin: 0.15em 0;
+}
+
+li {
+  margin-bottom: 1em;
+}
+
+li li {
+  margin-bottom: 0.5em;
+  border: 0 none;
+}

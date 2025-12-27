@@ -1,0 +1,121 @@
+From 2a52409cba31a1d5709451eceedfa7c8868bcfb8 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 30 Jun 2024 00:47:26 +0200
+Subject: [PATCH] Add Wasm console support
+
+Adds a simple HVC + earlycon tty driver that calls out to the Wasm host
+using simple exported functions on the vmlinux Module for reads/writes.
+---
+ arch/wasm/Kconfig            |  2 +-
+ arch/wasm/Makefile           |  1 +
+ arch/wasm/drivers/Kconfig    | 22 ++++++++++++++++++++++
+ arch/wasm/drivers/Makefile   |  3 +++
+ arch/wasm/drivers/hvc_wasm.c | 35 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 62 insertions(+), 1 deletion(-)
+ create mode 100644 arch/wasm/drivers/Kconfig
+ create mode 100644 arch/wasm/drivers/Makefile
+ create mode 100644 arch/wasm/drivers/hvc_wasm.c
+
+diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
+index 744e8c676..2e01d91b3 100644
+--- a/arch/wasm/Kconfig
++++ b/arch/wasm/Kconfig
+@@ -77,4 +77,4 @@ config ARCH_HAVE_PANIC_NOTIFY
+ 
+ endmenu
+ 
+-source "drivers/Kconfig"
++source "arch/wasm/drivers/Kconfig"
+diff --git a/arch/wasm/Makefile b/arch/wasm/Makefile
+index b86103e0b..841f3b006 100644
+--- a/arch/wasm/Makefile
++++ b/arch/wasm/Makefile
+@@ -12,6 +12,7 @@ KCFLAGS += -Xclang -target-feature -Xclang +bulk-memory
+ core-y += arch/wasm/kernel/
+ core-y += arch/wasm/mm/
+ libs-y += arch/wasm/lib/
++drivers-y += arch/wasm/drivers/
+ 
+ PHONY += bzImage
+ 
+diff --git a/arch/wasm/drivers/Kconfig b/arch/wasm/drivers/Kconfig
+new file mode 100644
+index 000000000..be8b75496
+--- /dev/null
++++ b/arch/wasm/drivers/Kconfig
+@@ -0,0 +1,22 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++menu "Wasm Character Devices"
++
++config HVC_WASM
++	bool "Wasm console support"
++	select HVC_DRIVER
++	help
++	  This config option enables support for a console managed by the Wasm
++	  host, for example to read printk output during boot as well as
++	  receiving user input. It works both as an earlycon and a tty. As an
++	  earlycon, very early debug logging is output. As a tty (enabled later
++	  on in the boot process), it also supports user input from the host.
++
++	  In addition to enabling this config option at build time, you also
++	  need to specify console=hvc as a parameter on the kernel command line
++	  to activate the feature at runtime. Just specifying console=hvc is
++	  enough to enable the earlycon aspects of this console driver as well.
++
++	  If you don't know what to do here, say Y.
++
++endmenu
+diff --git a/arch/wasm/drivers/Makefile b/arch/wasm/drivers/Makefile
+new file mode 100644
+index 000000000..0ebdc20a8
+--- /dev/null
++++ b/arch/wasm/drivers/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++obj-$(CONFIG_HVC_WASM) += hvc_wasm.o
+diff --git a/arch/wasm/drivers/hvc_wasm.c b/arch/wasm/drivers/hvc_wasm.c
+new file mode 100644
+index 000000000..78f34c060
+--- /dev/null
++++ b/arch/wasm/drivers/hvc_wasm.c
+@@ -0,0 +1,35 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include "../../../drivers/tty/hvc/hvc_console.h"
++
++extern int wasm_driver_hvc_put(const char *buf, int count);
++extern int wasm_driver_hvc_get(char *buf, int count);
++
++static int hvc_wasm_put_chars(uint32_t vtermno, const char *buf, int count)
++{
++	return wasm_driver_hvc_put(buf, count);
++}
++
++static int hvc_wasm_get_chars(uint32_t vtermno, char *buf, int count)
++{
++	return wasm_driver_hvc_get(buf, count);
++}
++
++static const struct hv_ops hvc_wasm_ops = {
++	.get_chars = hvc_wasm_get_chars,
++	.put_chars = hvc_wasm_put_chars,
++};
++
++static int __init hvc_wasm_init(void)
++{
++	return PTR_ERR_OR_ZERO(hvc_alloc(0, 0, &hvc_wasm_ops, PAGE_SIZE));
++}
++device_initcall(hvc_wasm_init);
++
++static int __init hvc_wasm_console_init(void)
++{
++	hvc_instantiate(0, 0, &hvc_wasm_ops);
++
++	return 0;
++}
++console_initcall(hvc_wasm_console_init);
+-- 
+2.25.1
+

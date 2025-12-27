@@ -1,0 +1,1851 @@
+diff -ruN a/linux/if_ether.h b/linux/if_ether.h
+--- a/linux/if_ether.h	2024-02-25 19:26:11.628023992 +0100
++++ b/linux/if_ether.h	2024-02-25 21:24:10.153141474 +0100
+@@ -23,6 +23,7 @@
+ #define _LINUX_IF_ETHER_H
+ 
+ #include <linux/types.h>
++#include <linux/libc-compat.h>
+ 
+ /*
+  *	IEEE 802.3 Ethernet magic constants.  The frame sizes omit the preamble
+diff -ruN a/linux/if_ether.h.orig b/linux/if_ether.h.orig
+--- a/linux/if_ether.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/if_ether.h.orig	2024-02-25 20:39:49.611132994 +0100
+@@ -0,0 +1,181 @@
++/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
++/*
++ * INET		An implementation of the TCP/IP protocol suite for the LINUX
++ *		operating system.  INET is implemented using the  BSD Socket
++ *		interface as the means of communication with the user level.
++ *
++ *		Global definitions for the Ethernet IEEE 802.3 interface.
++ *
++ * Version:	@(#)if_ether.h	1.0.1a	02/08/94
++ *
++ * Author:	Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
++ *		Donald Becker, <becker@super.org>
++ *		Alan Cox, <alan@lxorguk.ukuu.org.uk>
++ *		Steve Whitehouse, <gw7rrm@eeshack3.swan.ac.uk>
++ *
++ *		This program is free software; you can redistribute it and/or
++ *		modify it under the terms of the GNU General Public License
++ *		as published by the Free Software Foundation; either version
++ *		2 of the License, or (at your option) any later version.
++ */
++
++#ifndef _LINUX_IF_ETHER_H
++#define _LINUX_IF_ETHER_H
++
++#include <linux/types.h>
++
++/*
++ *	IEEE 802.3 Ethernet magic constants.  The frame sizes omit the preamble
++ *	and FCS/CRC (frame check sequence).
++ */
++
++#define ETH_ALEN	6		/* Octets in one ethernet addr	 */
++#define ETH_TLEN	2		/* Octets in ethernet type field */
++#define ETH_HLEN	14		/* Total octets in header.	 */
++#define ETH_ZLEN	60		/* Min. octets in frame sans FCS */
++#define ETH_DATA_LEN	1500		/* Max. octets in payload	 */
++#define ETH_FRAME_LEN	1514		/* Max. octets in frame sans FCS */
++#define ETH_FCS_LEN	4		/* Octets in the FCS		 */
++
++#define ETH_MIN_MTU	68		/* Min IPv4 MTU per RFC791	*/
++#define ETH_MAX_MTU	0xFFFFU		/* 65535, same as IP_MAX_MTU	*/
++
++/*
++ *	These are the defined Ethernet Protocol ID's.
++ */
++
++#define ETH_P_LOOP	0x0060		/* Ethernet Loopback packet	*/
++#define ETH_P_PUP	0x0200		/* Xerox PUP packet		*/
++#define ETH_P_PUPAT	0x0201		/* Xerox PUP Addr Trans packet	*/
++#define ETH_P_TSN	0x22F0		/* TSN (IEEE 1722) packet	*/
++#define ETH_P_ERSPAN2	0x22EB		/* ERSPAN version 2 (type III)	*/
++#define ETH_P_IP	0x0800		/* Internet Protocol packet	*/
++#define ETH_P_X25	0x0805		/* CCITT X.25			*/
++#define ETH_P_ARP	0x0806		/* Address Resolution packet	*/
++#define	ETH_P_BPQ	0x08FF		/* G8BPQ AX.25 Ethernet Packet	[ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_IEEEPUP	0x0a00		/* Xerox IEEE802.3 PUP packet */
++#define ETH_P_IEEEPUPAT	0x0a01		/* Xerox IEEE802.3 PUP Addr Trans packet */
++#define ETH_P_BATMAN	0x4305		/* B.A.T.M.A.N.-Advanced packet [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_DEC       0x6000          /* DEC Assigned proto           */
++#define ETH_P_DNA_DL    0x6001          /* DEC DNA Dump/Load            */
++#define ETH_P_DNA_RC    0x6002          /* DEC DNA Remote Console       */
++#define ETH_P_DNA_RT    0x6003          /* DEC DNA Routing              */
++#define ETH_P_LAT       0x6004          /* DEC LAT                      */
++#define ETH_P_DIAG      0x6005          /* DEC Diagnostics              */
++#define ETH_P_CUST      0x6006          /* DEC Customer use             */
++#define ETH_P_SCA       0x6007          /* DEC Systems Comms Arch       */
++#define ETH_P_TEB	0x6558		/* Trans Ether Bridging		*/
++#define ETH_P_RARP      0x8035		/* Reverse Addr Res packet	*/
++#define ETH_P_ATALK	0x809B		/* Appletalk DDP		*/
++#define ETH_P_AARP	0x80F3		/* Appletalk AARP		*/
++#define ETH_P_8021Q	0x8100          /* 802.1Q VLAN Extended Header  */
++#define ETH_P_ERSPAN	0x88BE		/* ERSPAN type II		*/
++#define ETH_P_IPX	0x8137		/* IPX over DIX			*/
++#define ETH_P_IPV6	0x86DD		/* IPv6 over bluebook		*/
++#define ETH_P_PAUSE	0x8808		/* IEEE Pause frames. See 802.3 31B */
++#define ETH_P_SLOW	0x8809		/* Slow Protocol. See 802.3ad 43B */
++#define ETH_P_WCCP	0x883E		/* Web-cache coordination protocol
++					 * defined in draft-wilson-wrec-wccp-v2-00.txt */
++#define ETH_P_MPLS_UC	0x8847		/* MPLS Unicast traffic		*/
++#define ETH_P_MPLS_MC	0x8848		/* MPLS Multicast traffic	*/
++#define ETH_P_ATMMPOA	0x884c		/* MultiProtocol Over ATM	*/
++#define ETH_P_PPP_DISC	0x8863		/* PPPoE discovery messages     */
++#define ETH_P_PPP_SES	0x8864		/* PPPoE session messages	*/
++#define ETH_P_LINK_CTL	0x886c		/* HPNA, wlan link local tunnel */
++#define ETH_P_ATMFATE	0x8884		/* Frame-based ATM Transport
++					 * over Ethernet
++					 */
++#define ETH_P_PAE	0x888E		/* Port Access Entity (IEEE 802.1X) */
++#define ETH_P_PROFINET	0x8892		/* PROFINET			*/
++#define ETH_P_REALTEK	0x8899          /* Multiple proprietary protocols */
++#define ETH_P_AOE	0x88A2		/* ATA over Ethernet		*/
++#define ETH_P_ETHERCAT	0x88A4		/* EtherCAT			*/
++#define ETH_P_8021AD	0x88A8          /* 802.1ad Service VLAN		*/
++#define ETH_P_802_EX1	0x88B5		/* 802.1 Local Experimental 1.  */
++#define ETH_P_PREAUTH	0x88C7		/* 802.11 Preauthentication */
++#define ETH_P_TIPC	0x88CA		/* TIPC 			*/
++#define ETH_P_LLDP	0x88CC		/* Link Layer Discovery Protocol */
++#define ETH_P_MRP	0x88E3		/* Media Redundancy Protocol	*/
++#define ETH_P_MACSEC	0x88E5		/* 802.1ae MACsec */
++#define ETH_P_8021AH	0x88E7          /* 802.1ah Backbone Service Tag */
++#define ETH_P_MVRP	0x88F5          /* 802.1Q MVRP                  */
++#define ETH_P_1588	0x88F7		/* IEEE 1588 Timesync */
++#define ETH_P_NCSI	0x88F8		/* NCSI protocol		*/
++#define ETH_P_PRP	0x88FB		/* IEC 62439-3 PRP/HSRv0	*/
++#define ETH_P_CFM	0x8902		/* Connectivity Fault Management */
++#define ETH_P_FCOE	0x8906		/* Fibre Channel over Ethernet  */
++#define ETH_P_IBOE	0x8915		/* Infiniband over Ethernet	*/
++#define ETH_P_TDLS	0x890D          /* TDLS */
++#define ETH_P_FIP	0x8914		/* FCoE Initialization Protocol */
++#define ETH_P_80221	0x8917		/* IEEE 802.21 Media Independent Handover Protocol */
++#define ETH_P_HSR	0x892F		/* IEC 62439-3 HSRv1	*/
++#define ETH_P_NSH	0x894F		/* Network Service Header */
++#define ETH_P_LOOPBACK	0x9000		/* Ethernet loopback packet, per IEEE 802.3 */
++#define ETH_P_QINQ1	0x9100		/* deprecated QinQ VLAN [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_QINQ2	0x9200		/* deprecated QinQ VLAN [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_QINQ3	0x9300		/* deprecated QinQ VLAN [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_EDSA	0xDADA		/* Ethertype DSA [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_DSA_8021Q	0xDADB		/* Fake VLAN Header for DSA [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_DSA_A5PSW	0xE001		/* A5PSW Tag Value [ NOT AN OFFICIALLY REGISTERED ID ] */
++#define ETH_P_IFE	0xED3E		/* ForCES inter-FE LFB type */
++#define ETH_P_AF_IUCV   0xFBFB		/* IBM af_iucv [ NOT AN OFFICIALLY REGISTERED ID ] */
++
++#define ETH_P_802_3_MIN	0x0600		/* If the value in the ethernet type is more than this value
++					 * then the frame is Ethernet II. Else it is 802.3 */
++
++/*
++ *	Non DIX types. Won't clash for 1500 types.
++ */
++
++#define ETH_P_802_3	0x0001		/* Dummy type for 802.3 frames  */
++#define ETH_P_AX25	0x0002		/* Dummy protocol id for AX.25  */
++#define ETH_P_ALL	0x0003		/* Every packet (be careful!!!) */
++#define ETH_P_802_2	0x0004		/* 802.2 frames 		*/
++#define ETH_P_SNAP	0x0005		/* Internal only		*/
++#define ETH_P_DDCMP     0x0006          /* DEC DDCMP: Internal only     */
++#define ETH_P_WAN_PPP   0x0007          /* Dummy type for WAN PPP frames*/
++#define ETH_P_PPP_MP    0x0008          /* Dummy type for PPP MP frames */
++#define ETH_P_LOCALTALK 0x0009		/* Localtalk pseudo type 	*/
++#define ETH_P_CAN	0x000C		/* CAN: Controller Area Network */
++#define ETH_P_CANFD	0x000D		/* CANFD: CAN flexible data rate*/
++#define ETH_P_CANXL	0x000E		/* CANXL: eXtended frame Length */
++#define ETH_P_PPPTALK	0x0010		/* Dummy type for Atalk over PPP*/
++#define ETH_P_TR_802_2	0x0011		/* 802.2 frames 		*/
++#define ETH_P_MOBITEX	0x0015		/* Mobitex (kaz@cafe.net)	*/
++#define ETH_P_CONTROL	0x0016		/* Card specific control frames */
++#define ETH_P_IRDA	0x0017		/* Linux-IrDA			*/
++#define ETH_P_ECONET	0x0018		/* Acorn Econet			*/
++#define ETH_P_HDLC	0x0019		/* HDLC frames			*/
++#define ETH_P_ARCNET	0x001A		/* 1A for ArcNet :-)            */
++#define ETH_P_DSA	0x001B		/* Distributed Switch Arch.	*/
++#define ETH_P_TRAILER	0x001C		/* Trailer switch tagging	*/
++#define ETH_P_PHONET	0x00F5		/* Nokia Phonet frames          */
++#define ETH_P_IEEE802154 0x00F6		/* IEEE802.15.4 frame		*/
++#define ETH_P_CAIF	0x00F7		/* ST-Ericsson CAIF protocol	*/
++#define ETH_P_XDSA	0x00F8		/* Multiplexed DSA protocol	*/
++#define ETH_P_MAP	0x00F9		/* Qualcomm multiplexing and
++					 * aggregation protocol
++					 */
++#define ETH_P_MCTP	0x00FA		/* Management component transport
++					 * protocol packets
++					 */
++
++/*
++ *	This is an Ethernet frame header.
++ */
++
++/* allow libcs like musl to deactivate this, glibc does not implement this. */
++#ifndef __UAPI_DEF_ETHHDR
++#define __UAPI_DEF_ETHHDR		1
++#endif
++
++#if __UAPI_DEF_ETHHDR
++struct ethhdr {
++	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
++	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
++	__be16		h_proto;		/* packet type ID field	*/
++} __attribute__((packed));
++#endif
++
++
++#endif /* _LINUX_IF_ETHER_H */
+diff -ruN a/linux/if_ether.h.rej b/linux/if_ether.h.rej
+--- a/linux/if_ether.h.rej	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/if_ether.h.rej	2024-02-25 21:24:10.153141474 +0100
+@@ -0,0 +1,16 @@
++--- linux/if_ether.h
+++++ linux/if_ether.h
++@@ -136,11 +137,12 @@
++  *	This is an Ethernet frame header.
++  */
++ 
+++#if __UAPI_DEF_ETHHDR
++ struct ethhdr {
++ 	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
++ 	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
++ 	__be16		h_proto;		/* packet type ID field	*/
++ } __attribute__((packed));
++-
+++#endif
++ 
++ #endif /* _LINUX_IF_ETHER_H */
+diff -ruN a/linux/if.h.orig b/linux/if.h.orig
+--- a/linux/if.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/if.h.orig	2024-02-25 20:39:49.611132994 +0100
+@@ -0,0 +1,296 @@
++/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
++/*
++ * INET		An implementation of the TCP/IP protocol suite for the LINUX
++ *		operating system.  INET is implemented using the  BSD Socket
++ *		interface as the means of communication with the user level.
++ *
++ *		Global definitions for the INET interface module.
++ *
++ * Version:	@(#)if.h	1.0.2	04/18/93
++ *
++ * Authors:	Original taken from Berkeley UNIX 4.3, (c) UCB 1982-1988
++ *		Ross Biro
++ *		Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
++ *
++ *		This program is free software; you can redistribute it and/or
++ *		modify it under the terms of the GNU General Public License
++ *		as published by the Free Software Foundation; either version
++ *		2 of the License, or (at your option) any later version.
++ */
++#ifndef _LINUX_IF_H
++#define _LINUX_IF_H
++
++#include <linux/libc-compat.h>          /* for compatibility with glibc */
++#include <linux/types.h>		/* for "__kernel_caddr_t" et al	*/
++#include <linux/socket.h>		/* for "struct sockaddr" et al	*/
++		/* for "__user" et al           */
++
++#include <sys/socket.h>			/* for struct sockaddr.		*/
++
++#if __UAPI_DEF_IF_IFNAMSIZ
++#define	IFNAMSIZ	16
++#endif /* __UAPI_DEF_IF_IFNAMSIZ */
++#define	IFALIASZ	256
++#define	ALTIFNAMSIZ	128
++#include <linux/hdlc/ioctl.h>
++
++/* For glibc compatibility. An empty enum does not compile. */
++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO != 0 || \
++    __UAPI_DEF_IF_NET_DEVICE_FLAGS != 0
++/**
++ * enum net_device_flags - &struct net_device flags
++ *
++ * These are the &struct net_device flags, they can be set by drivers, the
++ * kernel and some can be triggered by userspace. Userspace can query and
++ * set these flags using userspace utilities but there is also a sysfs
++ * entry available for all dev flags which can be queried and set. These flags
++ * are shared for all types of net_devices. The sysfs entries are available
++ * via /sys/class/net/<dev>/flags. Flags which can be toggled through sysfs
++ * are annotated below, note that only a few flags can be toggled and some
++ * other flags are always preserved from the original net_device flags
++ * even if you try to set them via sysfs. Flags which are always preserved
++ * are kept under the flag grouping @IFF_VOLATILE. Flags which are __volatile__
++ * are annotated below as such.
++ *
++ * You should have a pretty good reason to be extending these flags.
++ *
++ * @IFF_UP: interface is up. Can be toggled through sysfs.
++ * @IFF_BROADCAST: broadcast address valid. Volatile.
++ * @IFF_DEBUG: turn on debugging. Can be toggled through sysfs.
++ * @IFF_LOOPBACK: is a loopback net. Volatile.
++ * @IFF_POINTOPOINT: interface is has p-p link. Volatile.
++ * @IFF_NOTRAILERS: avoid use of trailers. Can be toggled through sysfs.
++ *	Volatile.
++ * @IFF_RUNNING: interface RFC2863 OPER_UP. Volatile.
++ * @IFF_NOARP: no ARP protocol. Can be toggled through sysfs. Volatile.
++ * @IFF_PROMISC: receive all packets. Can be toggled through sysfs.
++ * @IFF_ALLMULTI: receive all multicast packets. Can be toggled through
++ *	sysfs.
++ * @IFF_MASTER: master of a load balancer. Volatile.
++ * @IFF_SLAVE: slave of a load balancer. Volatile.
++ * @IFF_MULTICAST: Supports multicast. Can be toggled through sysfs.
++ * @IFF_PORTSEL: can set media type. Can be toggled through sysfs.
++ * @IFF_AUTOMEDIA: auto media select active. Can be toggled through sysfs.
++ * @IFF_DYNAMIC: dialup device with changing addresses. Can be toggled
++ *	through sysfs.
++ * @IFF_LOWER_UP: driver signals L1 up. Volatile.
++ * @IFF_DORMANT: driver signals dormant. Volatile.
++ * @IFF_ECHO: echo sent packets. Volatile.
++ */
++enum net_device_flags {
++/* for compatibility with glibc net/if.h */
++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS
++	IFF_UP				= 1<<0,  /* sysfs */
++	IFF_BROADCAST			= 1<<1,  /* __volatile__ */
++	IFF_DEBUG			= 1<<2,  /* sysfs */
++	IFF_LOOPBACK			= 1<<3,  /* __volatile__ */
++	IFF_POINTOPOINT			= 1<<4,  /* __volatile__ */
++	IFF_NOTRAILERS			= 1<<5,  /* sysfs */
++	IFF_RUNNING			= 1<<6,  /* __volatile__ */
++	IFF_NOARP			= 1<<7,  /* sysfs */
++	IFF_PROMISC			= 1<<8,  /* sysfs */
++	IFF_ALLMULTI			= 1<<9,  /* sysfs */
++	IFF_MASTER			= 1<<10, /* __volatile__ */
++	IFF_SLAVE			= 1<<11, /* __volatile__ */
++	IFF_MULTICAST			= 1<<12, /* sysfs */
++	IFF_PORTSEL			= 1<<13, /* sysfs */
++	IFF_AUTOMEDIA			= 1<<14, /* sysfs */
++	IFF_DYNAMIC			= 1<<15, /* sysfs */
++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS */
++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
++	IFF_LOWER_UP			= 1<<16, /* __volatile__ */
++	IFF_DORMANT			= 1<<17, /* __volatile__ */
++	IFF_ECHO			= 1<<18, /* __volatile__ */
++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
++};
++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO != 0 || __UAPI_DEF_IF_NET_DEVICE_FLAGS != 0 */
++
++/* for compatibility with glibc net/if.h */
++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS
++#define IFF_UP				IFF_UP
++#define IFF_BROADCAST			IFF_BROADCAST
++#define IFF_DEBUG			IFF_DEBUG
++#define IFF_LOOPBACK			IFF_LOOPBACK
++#define IFF_POINTOPOINT			IFF_POINTOPOINT
++#define IFF_NOTRAILERS			IFF_NOTRAILERS
++#define IFF_RUNNING			IFF_RUNNING
++#define IFF_NOARP			IFF_NOARP
++#define IFF_PROMISC			IFF_PROMISC
++#define IFF_ALLMULTI			IFF_ALLMULTI
++#define IFF_MASTER			IFF_MASTER
++#define IFF_SLAVE			IFF_SLAVE
++#define IFF_MULTICAST			IFF_MULTICAST
++#define IFF_PORTSEL			IFF_PORTSEL
++#define IFF_AUTOMEDIA			IFF_AUTOMEDIA
++#define IFF_DYNAMIC			IFF_DYNAMIC
++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS */
++
++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
++#define IFF_LOWER_UP			IFF_LOWER_UP
++#define IFF_DORMANT			IFF_DORMANT
++#define IFF_ECHO			IFF_ECHO
++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
++
++#define IFF_VOLATILE	(IFF_LOOPBACK|IFF_POINTOPOINT|IFF_BROADCAST|IFF_ECHO|\
++		IFF_MASTER|IFF_SLAVE|IFF_RUNNING|IFF_LOWER_UP|IFF_DORMANT)
++
++#define IF_GET_IFACE	0x0001		/* for querying only */
++#define IF_GET_PROTO	0x0002
++
++/* For definitions see hdlc.h */
++#define IF_IFACE_V35	0x1000		/* V.35 serial interface	*/
++#define IF_IFACE_V24	0x1001		/* V.24 serial interface	*/
++#define IF_IFACE_X21	0x1002		/* X.21 serial interface	*/
++#define IF_IFACE_T1	0x1003		/* T1 telco serial interface	*/
++#define IF_IFACE_E1	0x1004		/* E1 telco serial interface	*/
++#define IF_IFACE_SYNC_SERIAL 0x1005	/* can't be set by software	*/
++#define IF_IFACE_X21D   0x1006          /* X.21 Dual Clocking (FarSite) */
++
++/* For definitions see hdlc.h */
++#define IF_PROTO_HDLC	0x2000		/* raw HDLC protocol		*/
++#define IF_PROTO_PPP	0x2001		/* PPP protocol			*/
++#define IF_PROTO_CISCO	0x2002		/* Cisco HDLC protocol		*/
++#define IF_PROTO_FR	0x2003		/* Frame Relay protocol		*/
++#define IF_PROTO_FR_ADD_PVC 0x2004	/*    Create FR PVC		*/
++#define IF_PROTO_FR_DEL_PVC 0x2005	/*    Delete FR PVC		*/
++#define IF_PROTO_X25	0x2006		/* X.25				*/
++#define IF_PROTO_HDLC_ETH 0x2007	/* raw HDLC, Ethernet emulation	*/
++#define IF_PROTO_FR_ADD_ETH_PVC 0x2008	/*  Create FR Ethernet-bridged PVC */
++#define IF_PROTO_FR_DEL_ETH_PVC 0x2009	/*  Delete FR Ethernet-bridged PVC */
++#define IF_PROTO_FR_PVC	0x200A		/* for reading PVC status	*/
++#define IF_PROTO_FR_ETH_PVC 0x200B
++#define IF_PROTO_RAW    0x200C          /* RAW Socket                   */
++
++/* RFC 2863 operational status */
++enum {
++	IF_OPER_UNKNOWN,
++	IF_OPER_NOTPRESENT,
++	IF_OPER_DOWN,
++	IF_OPER_LOWERLAYERDOWN,
++	IF_OPER_TESTING,
++	IF_OPER_DORMANT,
++	IF_OPER_UP,
++};
++
++/* link modes */
++enum {
++	IF_LINK_MODE_DEFAULT,
++	IF_LINK_MODE_DORMANT,	/* limit upward transition to dormant */
++	IF_LINK_MODE_TESTING,	/* limit upward transition to testing */
++};
++
++/*
++ *	Device mapping structure. I'd just gone off and designed a 
++ *	beautiful scheme using only loadable modules with arguments
++ *	for driver options and along come the PCMCIA people 8)
++ *
++ *	Ah well. The get() side of this is good for WDSETUP, and it'll
++ *	be handy for debugging things. The set side is fine for now and
++ *	being very small might be worth keeping for clean configuration.
++ */
++
++/* for compatibility with glibc net/if.h */
++#if __UAPI_DEF_IF_IFMAP
++struct ifmap {
++	unsigned long mem_start;
++	unsigned long mem_end;
++	unsigned short base_addr; 
++	unsigned char irq;
++	unsigned char dma;
++	unsigned char port;
++	/* 3 bytes spare */
++};
++#endif /* __UAPI_DEF_IF_IFMAP */
++
++struct if_settings {
++	unsigned int type;	/* Type of physical device or protocol */
++	unsigned int size;	/* Size of the data allocated by the caller */
++	union {
++		/* {atm/eth/dsl}_settings anyone ? */
++		raw_hdlc_proto		*raw_hdlc;
++		cisco_proto		*cisco;
++		fr_proto		*fr;
++		fr_proto_pvc		*fr_pvc;
++		fr_proto_pvc_info	*fr_pvc_info;
++		x25_hdlc_proto		*x25;
++
++		/* interface settings */
++		sync_serial_settings	*sync;
++		te1_settings		*te1;
++	} ifs_ifsu;
++};
++
++/*
++ * Interface request structure used for socket
++ * ioctl's.  All interface ioctl's must have parameter
++ * definitions which begin with ifr_name.  The
++ * remainder may be interface specific.
++ */
++
++/* for compatibility with glibc net/if.h */
++#if __UAPI_DEF_IF_IFREQ
++struct ifreq {
++#define IFHWADDRLEN	6
++	union
++	{
++		char	ifrn_name[IFNAMSIZ];		/* if name, e.g. "en0" */
++	} ifr_ifrn;
++	
++	union {
++		struct	sockaddr ifru_addr;
++		struct	sockaddr ifru_dstaddr;
++		struct	sockaddr ifru_broadaddr;
++		struct	sockaddr ifru_netmask;
++		struct  sockaddr ifru_hwaddr;
++		short	ifru_flags;
++		int	ifru_ivalue;
++		int	ifru_mtu;
++		struct  ifmap ifru_map;
++		char	ifru_slave[IFNAMSIZ];	/* Just fits the size */
++		char	ifru_newname[IFNAMSIZ];
++		void *	ifru_data;
++		struct	if_settings ifru_settings;
++	} ifr_ifru;
++};
++#endif /* __UAPI_DEF_IF_IFREQ */
++
++#define ifr_name	ifr_ifrn.ifrn_name	/* interface name 	*/
++#define ifr_hwaddr	ifr_ifru.ifru_hwaddr	/* MAC address 		*/
++#define	ifr_addr	ifr_ifru.ifru_addr	/* address		*/
++#define	ifr_dstaddr	ifr_ifru.ifru_dstaddr	/* other end of p-p lnk	*/
++#define	ifr_broadaddr	ifr_ifru.ifru_broadaddr	/* broadcast address	*/
++#define	ifr_netmask	ifr_ifru.ifru_netmask	/* interface net mask	*/
++#define	ifr_flags	ifr_ifru.ifru_flags	/* flags		*/
++#define	ifr_metric	ifr_ifru.ifru_ivalue	/* metric		*/
++#define	ifr_mtu		ifr_ifru.ifru_mtu	/* mtu			*/
++#define ifr_map		ifr_ifru.ifru_map	/* device map		*/
++#define ifr_slave	ifr_ifru.ifru_slave	/* slave device		*/
++#define	ifr_data	ifr_ifru.ifru_data	/* for use by interface	*/
++#define ifr_ifindex	ifr_ifru.ifru_ivalue	/* interface index	*/
++#define ifr_bandwidth	ifr_ifru.ifru_ivalue    /* link bandwidth	*/
++#define ifr_qlen	ifr_ifru.ifru_ivalue	/* Queue length 	*/
++#define ifr_newname	ifr_ifru.ifru_newname	/* New name		*/
++#define ifr_settings	ifr_ifru.ifru_settings	/* Device/proto settings*/
++
++/*
++ * Structure used in SIOCGIFCONF request.
++ * Used to retrieve interface configuration
++ * for machine (useful for programs which
++ * must know all networks accessible).
++ */
++
++/* for compatibility with glibc net/if.h */
++#if __UAPI_DEF_IF_IFCONF
++struct ifconf  {
++	int	ifc_len;			/* size of buffer	*/
++	union {
++		char *ifcu_buf;
++		struct ifreq *ifcu_req;
++	} ifc_ifcu;
++};
++#endif /* __UAPI_DEF_IF_IFCONF */
++
++#define	ifc_buf	ifc_ifcu.ifcu_buf		/* buffer address	*/
++#define	ifc_req	ifc_ifcu.ifcu_req		/* array of structures	*/
++
++#endif /* _LINUX_IF_H */
+diff -ruN a/linux/if.h.rej b/linux/if.h.rej
+--- a/linux/if.h.rej	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/if.h.rej	2024-02-25 21:26:04.178635811 +0100
+@@ -0,0 +1,100 @@
++--- linux/if.h
+++++ linux/if.h
++@@ -19,14 +19,20 @@
++ #ifndef _LINUX_IF_H
++ #define _LINUX_IF_H
++ 
+++#include <linux/libc-compat.h>          /* for compatibility with glibc */
++ #include <linux/types.h>		/* for "__kernel_caddr_t" et al	*/
++ #include <linux/socket.h>		/* for "struct sockaddr" et al	*/
++ 		/* for "__user" et al           */
++ 
+++#if __UAPI_DEF_IF_IFNAMSIZ
++ #define	IFNAMSIZ	16
+++#endif /* __UAPI_DEF_IF_IFNAMSIZ */
++ #define	IFALIASZ	256
++ #include <linux/hdlc/ioctl.h>
++ 
+++/* For glibc compatibility. An empty enum does not compile. */
+++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO != 0 || \
+++    __UAPI_DEF_IF_NET_DEVICE_FLAGS != 0
++ /**
++  * enum net_device_flags - &struct net_device flags
++  *
++@@ -68,6 +74,8 @@
++  * @IFF_ECHO: echo sent packets. Volatile.
++  */
++ enum net_device_flags {
+++/* for compatibility with glibc net/if.h */
+++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS
++ 	IFF_UP				= 1<<0,  /* sysfs */
++ 	IFF_BROADCAST			= 1<<1,  /* __volatile__ */
++ 	IFF_DEBUG			= 1<<2,  /* sysfs */
++@@ -84,11 +92,17 @@ enum net_device_flags {
++ 	IFF_PORTSEL			= 1<<13, /* sysfs */
++ 	IFF_AUTOMEDIA			= 1<<14, /* sysfs */
++ 	IFF_DYNAMIC			= 1<<15, /* sysfs */
+++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS */
+++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
++ 	IFF_LOWER_UP			= 1<<16, /* __volatile__ */
++ 	IFF_DORMANT			= 1<<17, /* __volatile__ */
++ 	IFF_ECHO			= 1<<18, /* __volatile__ */
+++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
++ };
+++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO != 0 || __UAPI_DEF_IF_NET_DEVICE_FLAGS != 0 */
++ 
+++/* for compatibility with glibc net/if.h */
+++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS
++ #define IFF_UP				IFF_UP
++ #define IFF_BROADCAST			IFF_BROADCAST
++ #define IFF_DEBUG			IFF_DEBUG
++@@ -105,9 +119,13 @@ enum net_device_flags {
++ #define IFF_PORTSEL			IFF_PORTSEL
++ #define IFF_AUTOMEDIA			IFF_AUTOMEDIA
++ #define IFF_DYNAMIC			IFF_DYNAMIC
+++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS */
+++
+++#if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
++ #define IFF_LOWER_UP			IFF_LOWER_UP
++ #define IFF_DORMANT			IFF_DORMANT
++ #define IFF_ECHO			IFF_ECHO
+++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
++ 
++ #define IFF_VOLATILE	(IFF_LOOPBACK|IFF_POINTOPOINT|IFF_BROADCAST|IFF_ECHO|\
++ 		IFF_MASTER|IFF_SLAVE|IFF_RUNNING|IFF_LOWER_UP|IFF_DORMANT)
++@@ -166,6 +184,8 @@ enum {
++  *	being very small might be worth keeping for clean configuration.
++  */
++ 
+++/* for compatibility with glibc net/if.h */
+++#if __UAPI_DEF_IF_IFMAP
++ struct ifmap {
++ 	unsigned long mem_start;
++ 	unsigned long mem_end;
++@@ -201,6 +222,8 @@ struct if_settings {
++  * remainder may be interface specific.
++  */
++ 
+++/* for compatibility with glibc net/if.h */
+++#if __UAPI_DEF_IF_IFREQ
++ struct ifreq {
++ #define IFHWADDRLEN	6
++ 	union
++@@ -251,6 +275,8 @@ struct ifreq {
++  * must know all networks accessible).
++  */
++ 
+++/* for compatibility with glibc net/if.h */
+++#if __UAPI_DEF_IF_IFCONF
++ struct ifconf  {
++ 	int	ifc_len;			/* size of buffer	*/
++ 	union {
++@@ -258,6 +284,8 @@ struct ifconf  {
++ 		struct ifreq *ifcu_req;
++ 	} ifc_ifcu;
++ };
+++#endif /* __UAPI_DEF_IF_IFCONF */
+++
++ #define	ifc_buf	ifc_ifcu.ifcu_buf		/* buffer address	*/
++ #define	ifc_req	ifc_ifcu.ifcu_req		/* array of structures	*/
++ 
+diff -ruN a/linux/kernel.h.orig b/linux/kernel.h.orig
+--- a/linux/kernel.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/kernel.h.orig	2024-02-25 21:23:53.960928824 +0100
+@@ -0,0 +1,8 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef _LINUX_KERNEL_H
++#define _LINUX_KERNEL_H
++
++#include <linux/sysinfo.h>
++#include <linux/const.h>
++
++#endif /* _LINUX_KERNEL_H */
+diff -ruN a/linux/kernel.h.rej b/linux/kernel.h.rej
+--- a/linux/kernel.h.rej	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/kernel.h.rej	2024-02-25 21:23:53.960928824 +0100
+@@ -0,0 +1,11 @@
++--- linux/kernel.h
+++++ linux/kernel.h
++@@ -1,8 +1,6 @@
++ #ifndef _LINUX_KERNEL_H
++ #define _LINUX_KERNEL_H
++ 
++-#include <linux/sysinfo.h>
++-
++ /*
++  * 'kernel.h' contains some often-used function prototypes etc
++  */
+diff -ruN a/linux/libc-compat.h b/linux/libc-compat.h
+--- a/linux/libc-compat.h	2024-02-25 19:26:16.004079143 +0100
++++ b/linux/libc-compat.h	2024-02-25 21:26:04.178635811 +0100
+@@ -49,8 +49,7 @@
+ #ifndef _LIBC_COMPAT_H
+ #define _LIBC_COMPAT_H
+ 
+-/* We have included glibc headers... */
+-#if defined(__GLIBC__)
++#ifndef __KERNEL__ /* we're used from userspace */
+ 
+ /* Coordinate with glibc net/if.h header. */
+ #if defined(_NET_IF_H) && defined(__USE_MISC)
+@@ -86,6 +85,52 @@
+ 
+ #endif /* _NET_IF_H */
+ 
++#ifdef _NETINET_IF_ETHER_H /* musl */
++#define __UAPI_DEF_ETHHDR 0
++#else /* glibc uses __NETINET_IF_ETHER_H, and includes the kernel header. */
++#define __UAPI_DEF_ETHHDR 1
++#endif
++
++#ifdef _NETINET_TCP_H /* musl */
++#define __UAPI_DEF_TCPHDR 0
++#else
++#define __UAPI_DEF_TCPHDR 1
++#endif
++
++#ifdef _TIME_H /* musl */
++#define __UAPI_DEF_TIMESPEC 0
++#define __UAPI_DEF_ITIMERSPEC 0
++#else
++#define __UAPI_DEF_TIMESPEC 1
++#define __UAPI_DEF_ITIMERSPEC 1
++#endif
++
++#ifdef _SYS_TIME_H /* musl */
++#define __UAPI_DEF_TIMEVAL 0
++#define __UAPI_DEF_ITIMERVAL 0
++#define __UAPI_DEF_TIMEZONE 0
++#else
++#define __UAPI_DEF_TIMEVAL 1
++#define __UAPI_DEF_ITIMERVAL 1
++#define __UAPI_DEF_TIMEZONE 1
++#endif
++
++#ifdef _NET_IF_H /* musl */
++#define __UAPI_DEF_IF_IFNAMSIZ 0
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO 0
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS 0
++#define __UAPI_DEF_IF_IFMAP 0
++#define __UAPI_DEF_IF_IFREQ 0
++#define __UAPI_DEF_IF_IFCONF 0
++#else
++#define __UAPI_DEF_IF_IFNAMSIZ 1
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO 1
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS 1
++#define __UAPI_DEF_IF_IFMAP 1
++#define __UAPI_DEF_IF_IFREQ 1
++#define __UAPI_DEF_IF_IFCONF 1
++#endif
++
+ /* Coordinate with glibc netinet/in.h header. */
+ #if defined(_NETINET_IN_H)
+ 
+@@ -103,11 +148,7 @@
+  * if the glibc code didn't define them. This guard matches
+  * the guard in glibc/inet/netinet/in.h which defines the
+  * additional in6_addr macros e.g. s6_addr16, and s6_addr32. */
+-#if defined(__USE_MISC) || defined (__USE_GNU)
+ #define __UAPI_DEF_IN6_ADDR_ALT		0
+-#else
+-#define __UAPI_DEF_IN6_ADDR_ALT		1
+-#endif
+ #define __UAPI_DEF_SOCKADDR_IN6		0
+ #define __UAPI_DEF_IPV6_MREQ		0
+ #define __UAPI_DEF_IPPROTO_V6		0
+@@ -262,6 +303,22 @@
+ #define __UAPI_DEF_XATTR		1
+ #endif
+ 
++#define __UAPI_DEF_TCPHDR 1
++#define __UAPI_DEF_ETHHDR 1
++
++#define __UAPI_DEF_TIMESPEC 1
++#define __UAPI_DEF_ITIMERSPEC 1
++#define __UAPI_DEF_TIMEVAL 1
++#define __UAPI_DEF_ITIMERVAL 1
++#define __UAPI_DEF_TIMEZONE 1
++
++#define __UAPI_DEF_IF_IFNAMSIZ 1
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO 1
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS 1
++#define __UAPI_DEF_IF_IFMAP 1
++#define __UAPI_DEF_IF_IFREQ 1
++#define __UAPI_DEF_IF_IFCONF 1
++
+ #endif /* __GLIBC__ */
+ 
+ #endif /* _LIBC_COMPAT_H */
+diff -ruN a/linux/libc-compat.h.orig b/linux/libc-compat.h.orig
+--- a/linux/libc-compat.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/libc-compat.h.orig	2024-02-25 21:25:54.886514226 +0100
+@@ -0,0 +1,303 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++/*
++ * Compatibility interface for userspace libc header coordination:
++ *
++ * Define compatibility macros that are used to control the inclusion or
++ * exclusion of UAPI structures and definitions in coordination with another
++ * userspace C library.
++ *
++ * This header is intended to solve the problem of UAPI definitions that
++ * conflict with userspace definitions. If a UAPI header has such conflicting
++ * definitions then the solution is as follows:
++ *
++ * * Synchronize the UAPI header and the libc headers so either one can be
++ *   used and such that the ABI is preserved. If this is not possible then
++ *   no simple compatibility interface exists (you need to write translating
++ *   wrappers and rename things) and you can't use this interface.
++ *
++ * Then follow this process:
++ *
++ * (a) Include libc-compat.h in the UAPI header.
++ *      e.g. #include <linux/libc-compat.h>
++ *     This include must be as early as possible.
++ *
++ * (b) In libc-compat.h add enough code to detect that the comflicting
++ *     userspace libc header has been included first.
++ *
++ * (c) If the userspace libc header has been included first define a set of
++ *     guard macros of the form __UAPI_DEF_FOO and set their values to 1, else
++ *     set their values to 0.
++ *
++ * (d) Back in the UAPI header with the conflicting definitions, guard the
++ *     definitions with:
++ *     #if __UAPI_DEF_FOO
++ *       ...
++ *     #endif
++ *
++ * This fixes the situation where the linux headers are included *after* the
++ * libc headers. To fix the problem with the inclusion in the other order the
++ * userspace libc headers must be fixed like this:
++ *
++ * * For all definitions that conflict with kernel definitions wrap those
++ *   defines in the following:
++ *   #if !__UAPI_DEF_FOO
++ *     ...
++ *   #endif
++ *
++ * This prevents the redefinition of a construct already defined by the kernel.
++ */
++#ifndef _LIBC_COMPAT_H
++#define _LIBC_COMPAT_H
++
++#ifndef __KERNEL__ /* we're used from userspace */
++
++/* Coordinate with glibc net/if.h header. */
++#if defined(_NET_IF_H) && defined(__USE_MISC)
++
++/* GLIBC headers included first so don't define anything
++ * that would already be defined. */
++
++#define __UAPI_DEF_IF_IFCONF 0
++#define __UAPI_DEF_IF_IFMAP 0
++#define __UAPI_DEF_IF_IFNAMSIZ 0
++#define __UAPI_DEF_IF_IFREQ 0
++/* Everything up to IFF_DYNAMIC, matches net/if.h until glibc 2.23 */
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS 0
++/* For the future if glibc adds IFF_LOWER_UP, IFF_DORMANT and IFF_ECHO */
++#ifndef __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO 1
++#endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
++
++#else /* _NET_IF_H */
++
++/* Linux headers included first, and we must define everything
++ * we need. The expectation is that glibc will check the
++ * __UAPI_DEF_* defines and adjust appropriately. */
++
++#define __UAPI_DEF_IF_IFCONF 1
++#define __UAPI_DEF_IF_IFMAP 1
++#define __UAPI_DEF_IF_IFNAMSIZ 1
++#define __UAPI_DEF_IF_IFREQ 1
++/* Everything up to IFF_DYNAMIC, matches net/if.h until glibc 2.23 */
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS 1
++/* For the future if glibc adds IFF_LOWER_UP, IFF_DORMANT and IFF_ECHO */
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO 1
++
++#endif /* _NET_IF_H */
++
++#ifdef _NETINET_IF_ETHER_H /* musl */
++#define __UAPI_DEF_ETHHDR 0
++#else /* glibc uses __NETINET_IF_ETHER_H, and includes the kernel header. */
++#define __UAPI_DEF_ETHHDR 1
++#endif
++
++#ifdef _NETINET_TCP_H /* musl */
++#define __UAPI_DEF_TCPHDR 0
++#else
++#define __UAPI_DEF_TCPHDR 1
++#endif
++
++#ifdef _TIME_H /* musl */
++#define __UAPI_DEF_TIMESPEC 0
++#define __UAPI_DEF_ITIMERSPEC 0
++#else
++#define __UAPI_DEF_TIMESPEC 1
++#define __UAPI_DEF_ITIMERSPEC 1
++#endif
++
++#ifdef _SYS_TIME_H /* musl */
++#define __UAPI_DEF_TIMEVAL 0
++#define __UAPI_DEF_ITIMERVAL 0
++#define __UAPI_DEF_TIMEZONE 0
++#else
++#define __UAPI_DEF_TIMEVAL 1
++#define __UAPI_DEF_ITIMERVAL 1
++#define __UAPI_DEF_TIMEZONE 1
++#endif
++
++
++/* Coordinate with glibc netinet/in.h header. */
++#if defined(_NETINET_IN_H)
++
++/* GLIBC headers included first so don't define anything
++ * that would already be defined. */
++#define __UAPI_DEF_IN_ADDR		0
++#define __UAPI_DEF_IN_IPPROTO		0
++#define __UAPI_DEF_IN_PKTINFO		0
++#define __UAPI_DEF_IP_MREQ		0
++#define __UAPI_DEF_SOCKADDR_IN		0
++#define __UAPI_DEF_IN_CLASS		0
++
++#define __UAPI_DEF_IN6_ADDR		0
++/* The exception is the in6_addr macros which must be defined
++ * if the glibc code didn't define them. This guard matches
++ * the guard in glibc/inet/netinet/in.h which defines the
++ * additional in6_addr macros e.g. s6_addr16, and s6_addr32. */
++#define __UAPI_DEF_IN6_ADDR_ALT		0
++#define __UAPI_DEF_SOCKADDR_IN6		0
++#define __UAPI_DEF_IPV6_MREQ		0
++#define __UAPI_DEF_IPPROTO_V6		0
++#define __UAPI_DEF_IPV6_OPTIONS		0
++#define __UAPI_DEF_IN6_PKTINFO		0
++#define __UAPI_DEF_IP6_MTUINFO		0
++
++#else
++
++/* Linux headers included first, and we must define everything
++ * we need. The expectation is that glibc will check the
++ * __UAPI_DEF_* defines and adjust appropriately. */
++#define __UAPI_DEF_IN_ADDR		1
++#define __UAPI_DEF_IN_IPPROTO		1
++#define __UAPI_DEF_IN_PKTINFO		1
++#define __UAPI_DEF_IP_MREQ		1
++#define __UAPI_DEF_SOCKADDR_IN		1
++#define __UAPI_DEF_IN_CLASS		1
++
++#define __UAPI_DEF_IN6_ADDR		1
++/* We unconditionally define the in6_addr macros and glibc must
++ * coordinate. */
++#define __UAPI_DEF_IN6_ADDR_ALT		1
++#define __UAPI_DEF_SOCKADDR_IN6		1
++#define __UAPI_DEF_IPV6_MREQ		1
++#define __UAPI_DEF_IPPROTO_V6		1
++#define __UAPI_DEF_IPV6_OPTIONS		1
++#define __UAPI_DEF_IN6_PKTINFO		1
++#define __UAPI_DEF_IP6_MTUINFO		1
++
++#endif /* _NETINET_IN_H */
++
++/* Coordinate with glibc netipx/ipx.h header. */
++#if defined(__NETIPX_IPX_H)
++
++#define __UAPI_DEF_SOCKADDR_IPX			0
++#define __UAPI_DEF_IPX_ROUTE_DEFINITION		0
++#define __UAPI_DEF_IPX_INTERFACE_DEFINITION	0
++#define __UAPI_DEF_IPX_CONFIG_DATA		0
++#define __UAPI_DEF_IPX_ROUTE_DEF		0
++
++#else /* defined(__NETIPX_IPX_H) */
++
++#define __UAPI_DEF_SOCKADDR_IPX			1
++#define __UAPI_DEF_IPX_ROUTE_DEFINITION		1
++#define __UAPI_DEF_IPX_INTERFACE_DEFINITION	1
++#define __UAPI_DEF_IPX_CONFIG_DATA		1
++#define __UAPI_DEF_IPX_ROUTE_DEF		1
++
++#endif /* defined(__NETIPX_IPX_H) */
++
++/* Definitions for xattr.h */
++#if defined(_SYS_XATTR_H)
++#define __UAPI_DEF_XATTR		0
++#else
++#define __UAPI_DEF_XATTR		1
++#endif
++
++/* If we did not see any headers from any supported C libraries,
++ * or we are being included in the kernel, then define everything
++ * that we need. Check for previous __UAPI_* definitions to give
++ * unsupported C libraries a way to opt out of any kernel definition. */
++#else /* !defined(__GLIBC__) */
++
++/* Definitions for if.h */
++#ifndef __UAPI_DEF_IF_IFCONF
++#define __UAPI_DEF_IF_IFCONF 1
++#endif
++#ifndef __UAPI_DEF_IF_IFMAP
++#define __UAPI_DEF_IF_IFMAP 1
++#endif
++#ifndef __UAPI_DEF_IF_IFNAMSIZ
++#define __UAPI_DEF_IF_IFNAMSIZ 1
++#endif
++#ifndef __UAPI_DEF_IF_IFREQ
++#define __UAPI_DEF_IF_IFREQ 1
++#endif
++/* Everything up to IFF_DYNAMIC, matches net/if.h until glibc 2.23 */
++#ifndef __UAPI_DEF_IF_NET_DEVICE_FLAGS
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS 1
++#endif
++/* For the future if glibc adds IFF_LOWER_UP, IFF_DORMANT and IFF_ECHO */
++#ifndef __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
++#define __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO 1
++#endif
++
++/* Definitions for in.h */
++#ifndef __UAPI_DEF_IN_ADDR
++#define __UAPI_DEF_IN_ADDR		1
++#endif
++#ifndef __UAPI_DEF_IN_IPPROTO
++#define __UAPI_DEF_IN_IPPROTO		1
++#endif
++#ifndef __UAPI_DEF_IN_PKTINFO
++#define __UAPI_DEF_IN_PKTINFO		1
++#endif
++#ifndef __UAPI_DEF_IP_MREQ
++#define __UAPI_DEF_IP_MREQ		1
++#endif
++#ifndef __UAPI_DEF_SOCKADDR_IN
++#define __UAPI_DEF_SOCKADDR_IN		1
++#endif
++#ifndef __UAPI_DEF_IN_CLASS
++#define __UAPI_DEF_IN_CLASS		1
++#endif
++
++/* Definitions for in6.h */
++#ifndef __UAPI_DEF_IN6_ADDR
++#define __UAPI_DEF_IN6_ADDR		1
++#endif
++#ifndef __UAPI_DEF_IN6_ADDR_ALT
++#define __UAPI_DEF_IN6_ADDR_ALT		1
++#endif
++#ifndef __UAPI_DEF_SOCKADDR_IN6
++#define __UAPI_DEF_SOCKADDR_IN6		1
++#endif
++#ifndef __UAPI_DEF_IPV6_MREQ
++#define __UAPI_DEF_IPV6_MREQ		1
++#endif
++#ifndef __UAPI_DEF_IPPROTO_V6
++#define __UAPI_DEF_IPPROTO_V6		1
++#endif
++#ifndef __UAPI_DEF_IPV6_OPTIONS
++#define __UAPI_DEF_IPV6_OPTIONS		1
++#endif
++#ifndef __UAPI_DEF_IN6_PKTINFO
++#define __UAPI_DEF_IN6_PKTINFO		1
++#endif
++#ifndef __UAPI_DEF_IP6_MTUINFO
++#define __UAPI_DEF_IP6_MTUINFO		1
++#endif
++
++/* Definitions for ipx.h */
++#ifndef __UAPI_DEF_SOCKADDR_IPX
++#define __UAPI_DEF_SOCKADDR_IPX			1
++#endif
++#ifndef __UAPI_DEF_IPX_ROUTE_DEFINITION
++#define __UAPI_DEF_IPX_ROUTE_DEFINITION		1
++#endif
++#ifndef __UAPI_DEF_IPX_INTERFACE_DEFINITION
++#define __UAPI_DEF_IPX_INTERFACE_DEFINITION	1
++#endif
++#ifndef __UAPI_DEF_IPX_CONFIG_DATA
++#define __UAPI_DEF_IPX_CONFIG_DATA		1
++#endif
++#ifndef __UAPI_DEF_IPX_ROUTE_DEF
++#define __UAPI_DEF_IPX_ROUTE_DEF		1
++#endif
++
++/* Definitions for xattr.h */
++#ifndef __UAPI_DEF_XATTR
++#define __UAPI_DEF_XATTR		1
++#endif
++
++#define __UAPI_DEF_TCPHDR 1
++#define __UAPI_DEF_ETHHDR 1
++
++#define __UAPI_DEF_TIMESPEC 1
++#define __UAPI_DEF_ITIMERSPEC 1
++#define __UAPI_DEF_TIMEVAL 1
++#define __UAPI_DEF_ITIMERVAL 1
++#define __UAPI_DEF_TIMEZONE 1
++
++
++#endif /* __GLIBC__ */
++
++#endif /* _LIBC_COMPAT_H */
+diff -ruN a/linux/libc-compat.h.rej b/linux/libc-compat.h.rej
+--- a/linux/libc-compat.h.rej	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/libc-compat.h.rej	2024-02-25 21:25:18.614039299 +0100
+@@ -0,0 +1,15 @@
++--- linux/libc-compat.h
+++++ linux/libc-compat.h
++@@ -56,6 +56,12 @@
++ #define __UAPI_DEF_ETHHDR 1
++ #endif
++ 
+++#ifdef _NETINET_TCP_H /* musl */
+++#define __UAPI_DEF_TCPHDR 0
+++#else
+++#define __UAPI_DEF_TCPHDR 1
+++#endif
+++
++ /* Coordinate with glibc netinet/in.h header. */
++ #if defined(_NETINET_IN_H)
++ 
+diff -ruN a/linux/stat.h b/linux/stat.h
+--- a/linux/stat.h	2024-02-25 19:26:20.004129543 +0100
++++ b/linux/stat.h	2024-02-25 21:23:41.940770885 +0100
+@@ -4,7 +4,7 @@
+ 
+ #include <linux/types.h>
+ 
+-#if defined(__KERNEL__) || !defined(__GLIBC__) || (__GLIBC__ < 2)
++#if defined(__KERNEL__) || !defined(S_ISLNK)
+ 
+ #define S_IFMT  00170000
+ #define S_IFSOCK 0140000
+diff -ruN a/linux/stat.h.orig b/linux/stat.h.orig
+--- a/linux/stat.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/stat.h.orig	2024-02-25 20:39:49.635133283 +0100
+@@ -0,0 +1,192 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef _LINUX_STAT_H
++#define _LINUX_STAT_H
++
++#include <linux/types.h>
++
++#if defined(__KERNEL__) || !defined(__GLIBC__) || (__GLIBC__ < 2)
++
++#define S_IFMT  00170000
++#define S_IFSOCK 0140000
++#define S_IFLNK	 0120000
++#define S_IFREG  0100000
++#define S_IFBLK  0060000
++#define S_IFDIR  0040000
++#define S_IFCHR  0020000
++#define S_IFIFO  0010000
++#define S_ISUID  0004000
++#define S_ISGID  0002000
++#define S_ISVTX  0001000
++
++#define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
++#define S_ISREG(m)	(((m) & S_IFMT) == S_IFREG)
++#define S_ISDIR(m)	(((m) & S_IFMT) == S_IFDIR)
++#define S_ISCHR(m)	(((m) & S_IFMT) == S_IFCHR)
++#define S_ISBLK(m)	(((m) & S_IFMT) == S_IFBLK)
++#define S_ISFIFO(m)	(((m) & S_IFMT) == S_IFIFO)
++#define S_ISSOCK(m)	(((m) & S_IFMT) == S_IFSOCK)
++
++#define S_IRWXU 00700
++#define S_IRUSR 00400
++#define S_IWUSR 00200
++#define S_IXUSR 00100
++
++#define S_IRWXG 00070
++#define S_IRGRP 00040
++#define S_IWGRP 00020
++#define S_IXGRP 00010
++
++#define S_IRWXO 00007
++#define S_IROTH 00004
++#define S_IWOTH 00002
++#define S_IXOTH 00001
++
++#endif
++
++/*
++ * Timestamp structure for the timestamps in struct statx.
++ *
++ * tv_sec holds the number of seconds before (negative) or after (positive)
++ * 00:00:00 1st January 1970 UTC.
++ *
++ * tv_nsec holds a number of nanoseconds (0..999,999,999) after the tv_sec time.
++ *
++ * __reserved is held in case we need a yet finer resolution.
++ */
++struct statx_timestamp {
++	__s64	tv_sec;
++	__u32	tv_nsec;
++	__s32	__reserved;
++};
++
++/*
++ * Structures for the extended file attribute retrieval system call
++ * (statx()).
++ *
++ * The caller passes a mask of what they're specifically interested in as a
++ * parameter to statx().  What statx() actually got will be indicated in
++ * st_mask upon return.
++ *
++ * For each bit in the mask argument:
++ *
++ * - if the datum is not supported:
++ *
++ *   - the bit will be cleared, and
++ *
++ *   - the datum will be set to an appropriate fabricated value if one is
++ *     available (eg. CIFS can take a default uid and gid), otherwise
++ *
++ *   - the field will be cleared;
++ *
++ * - otherwise, if explicitly requested:
++ *
++ *   - the datum will be synchronised to the server if AT_STATX_FORCE_SYNC is
++ *     set or if the datum is considered out of date, and
++ *
++ *   - the field will be filled in and the bit will be set;
++ *
++ * - otherwise, if not requested, but available in approximate form without any
++ *   effort, it will be filled in anyway, and the bit will be set upon return
++ *   (it might not be up to date, however, and no attempt will be made to
++ *   synchronise the internal state first);
++ *
++ * - otherwise the field and the bit will be cleared before returning.
++ *
++ * Items in STATX_BASIC_STATS may be marked unavailable on return, but they
++ * will have values installed for compatibility purposes so that stat() and
++ * co. can be emulated in userspace.
++ */
++struct statx {
++	/* 0x00 */
++	__u32	stx_mask;	/* What results were written [uncond] */
++	__u32	stx_blksize;	/* Preferred general I/O size [uncond] */
++	__u64	stx_attributes;	/* Flags conveying information about the file [uncond] */
++	/* 0x10 */
++	__u32	stx_nlink;	/* Number of hard links */
++	__u32	stx_uid;	/* User ID of owner */
++	__u32	stx_gid;	/* Group ID of owner */
++	__u16	stx_mode;	/* File mode */
++	__u16	__spare0[1];
++	/* 0x20 */
++	__u64	stx_ino;	/* Inode number */
++	__u64	stx_size;	/* File size */
++	__u64	stx_blocks;	/* Number of 512-byte blocks allocated */
++	__u64	stx_attributes_mask; /* Mask to show what's supported in stx_attributes */
++	/* 0x40 */
++	struct statx_timestamp	stx_atime;	/* Last access time */
++	struct statx_timestamp	stx_btime;	/* File creation time */
++	struct statx_timestamp	stx_ctime;	/* Last attribute change time */
++	struct statx_timestamp	stx_mtime;	/* Last data modification time */
++	/* 0x80 */
++	__u32	stx_rdev_major;	/* Device ID of special file [if bdev/cdev] */
++	__u32	stx_rdev_minor;
++	__u32	stx_dev_major;	/* ID of device containing file [uncond] */
++	__u32	stx_dev_minor;
++	/* 0x90 */
++	__u64	stx_mnt_id;
++	__u32	stx_dio_mem_align;	/* Memory buffer alignment for direct I/O */
++	__u32	stx_dio_offset_align;	/* File offset alignment for direct I/O */
++	/* 0xa0 */
++	__u64	__spare3[12];	/* Spare space for future expansion */
++	/* 0x100 */
++};
++
++/*
++ * Flags to be stx_mask
++ *
++ * Query request/result mask for statx() and struct statx::stx_mask.
++ *
++ * These bits should be set in the mask argument of statx() to request
++ * particular items when calling statx().
++ */
++#define STATX_TYPE		0x00000001U	/* Want/got stx_mode & S_IFMT */
++#define STATX_MODE		0x00000002U	/* Want/got stx_mode & ~S_IFMT */
++#define STATX_NLINK		0x00000004U	/* Want/got stx_nlink */
++#define STATX_UID		0x00000008U	/* Want/got stx_uid */
++#define STATX_GID		0x00000010U	/* Want/got stx_gid */
++#define STATX_ATIME		0x00000020U	/* Want/got stx_atime */
++#define STATX_MTIME		0x00000040U	/* Want/got stx_mtime */
++#define STATX_CTIME		0x00000080U	/* Want/got stx_ctime */
++#define STATX_INO		0x00000100U	/* Want/got stx_ino */
++#define STATX_SIZE		0x00000200U	/* Want/got stx_size */
++#define STATX_BLOCKS		0x00000400U	/* Want/got stx_blocks */
++#define STATX_BASIC_STATS	0x000007ffU	/* The stuff in the normal stat struct */
++#define STATX_BTIME		0x00000800U	/* Want/got stx_btime */
++#define STATX_MNT_ID		0x00001000U	/* Got stx_mnt_id */
++#define STATX_DIOALIGN		0x00002000U	/* Want/got direct I/O alignment info */
++
++#define STATX__RESERVED		0x80000000U	/* Reserved for future struct statx expansion */
++
++/*
++ * This is deprecated, and shall remain the same value in the future.  To avoid
++ * confusion please use the equivalent (STATX_BASIC_STATS | STATX_BTIME)
++ * instead.
++ */
++#define STATX_ALL		0x00000fffU
++
++/*
++ * Attributes to be found in stx_attributes and masked in stx_attributes_mask.
++ *
++ * These give information about the features or the state of a file that might
++ * be of use to ordinary userspace programs such as GUIs or ls rather than
++ * specialised tools.
++ *
++ * Note that the flags marked [I] correspond to the FS_IOC_SETFLAGS flags
++ * semantically.  Where possible, the numerical value is picked to correspond
++ * also.  Note that the DAX attribute indicates that the file is in the CPU
++ * direct access state.  It does not correspond to the per-inode flag that
++ * some filesystems support.
++ *
++ */
++#define STATX_ATTR_COMPRESSED		0x00000004 /* [I] File is compressed by the fs */
++#define STATX_ATTR_IMMUTABLE		0x00000010 /* [I] File is marked immutable */
++#define STATX_ATTR_APPEND		0x00000020 /* [I] File is append-only */
++#define STATX_ATTR_NODUMP		0x00000040 /* [I] File is not to be dumped */
++#define STATX_ATTR_ENCRYPTED		0x00000800 /* [I] File requires key to decrypt in fs */
++#define STATX_ATTR_AUTOMOUNT		0x00001000 /* Dir: Automount trigger */
++#define STATX_ATTR_MOUNT_ROOT		0x00002000 /* Root of a mount */
++#define STATX_ATTR_VERITY		0x00100000 /* [I] Verity protected file */
++#define STATX_ATTR_DAX			0x00200000 /* File is currently in DAX state */
++
++
++#endif /* _LINUX_STAT_H */
+diff -ruN a/linux/tcp.h b/linux/tcp.h
+--- a/linux/tcp.h	2024-02-25 19:26:16.364083679 +0100
++++ b/linux/tcp.h	2024-02-25 21:24:29.185391271 +0100
+@@ -19,9 +19,11 @@
+ #define _LINUX_TCP_H
+ 
+ #include <linux/types.h>
++#include <linux/libc-compat.h>
+ #include <asm/byteorder.h>
+ #include <linux/socket.h>
+ 
++#if __UAPI_DEF_TCPHDR
+ struct tcphdr {
+ 	__be16	source;
+ 	__be16	dest;
+@@ -56,6 +58,7 @@
+ 	__sum16	check;
+ 	__be16	urg_ptr;
+ };
++#endif
+ 
+ /*
+  *	The union cast uses a gcc extension to avoid aliasing problems
+diff -ruN a/linux/tcp.h.orig b/linux/tcp.h.orig
+--- a/linux/tcp.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/tcp.h.orig	2024-02-25 20:39:49.627133187 +0100
+@@ -0,0 +1,368 @@
++/* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
++/*
++ * INET		An implementation of the TCP/IP protocol suite for the LINUX
++ *		operating system.  INET is implemented using the  BSD Socket
++ *		interface as the means of communication with the user level.
++ *
++ *		Definitions for the TCP protocol.
++ *
++ * Version:	@(#)tcp.h	1.0.2	04/28/93
++ *
++ * Author:	Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
++ *
++ *		This program is free software; you can redistribute it and/or
++ *		modify it under the terms of the GNU General Public License
++ *		as published by the Free Software Foundation; either version
++ *		2 of the License, or (at your option) any later version.
++ */
++#ifndef _LINUX_TCP_H
++#define _LINUX_TCP_H
++
++#include <linux/types.h>
++#include <asm/byteorder.h>
++#include <linux/socket.h>
++
++struct tcphdr {
++	__be16	source;
++	__be16	dest;
++	__be32	seq;
++	__be32	ack_seq;
++#if defined(__LITTLE_ENDIAN_BITFIELD)
++	__u16	res1:4,
++		doff:4,
++		fin:1,
++		syn:1,
++		rst:1,
++		psh:1,
++		ack:1,
++		urg:1,
++		ece:1,
++		cwr:1;
++#elif defined(__BIG_ENDIAN_BITFIELD)
++	__u16	doff:4,
++		res1:4,
++		cwr:1,
++		ece:1,
++		urg:1,
++		ack:1,
++		psh:1,
++		rst:1,
++		syn:1,
++		fin:1;
++#else
++#error	"Adjust your <asm/byteorder.h> defines"
++#endif
++	__be16	window;
++	__sum16	check;
++	__be16	urg_ptr;
++};
++
++/*
++ *	The union cast uses a gcc extension to avoid aliasing problems
++ *  (union is compatible to any of its members)
++ *  This means this part of the code is -fstrict-aliasing safe now.
++ */
++union tcp_word_hdr {
++	struct tcphdr hdr;
++	__be32        words[5];
++};
++
++#define tcp_flag_word(tp) (((union tcp_word_hdr *)(tp))->words[3])
++
++enum {
++	TCP_FLAG_CWR = __constant_cpu_to_be32(0x00800000),
++	TCP_FLAG_ECE = __constant_cpu_to_be32(0x00400000),
++	TCP_FLAG_URG = __constant_cpu_to_be32(0x00200000),
++	TCP_FLAG_ACK = __constant_cpu_to_be32(0x00100000),
++	TCP_FLAG_PSH = __constant_cpu_to_be32(0x00080000),
++	TCP_FLAG_RST = __constant_cpu_to_be32(0x00040000),
++	TCP_FLAG_SYN = __constant_cpu_to_be32(0x00020000),
++	TCP_FLAG_FIN = __constant_cpu_to_be32(0x00010000),
++	TCP_RESERVED_BITS = __constant_cpu_to_be32(0x0F000000),
++	TCP_DATA_OFFSET = __constant_cpu_to_be32(0xF0000000)
++};
++
++/*
++ * TCP general constants
++ */
++#define TCP_MSS_DEFAULT		 536U	/* IPv4 (RFC1122, RFC2581) */
++#define TCP_MSS_DESIRED		1220U	/* IPv6 (tunneled), EDNS0 (RFC3226) */
++
++/* TCP socket options */
++#define TCP_NODELAY		1	/* Turn off Nagle's algorithm. */
++#define TCP_MAXSEG		2	/* Limit MSS */
++#define TCP_CORK		3	/* Never send partially complete segments */
++#define TCP_KEEPIDLE		4	/* Start keeplives after this period */
++#define TCP_KEEPINTVL		5	/* Interval between keepalives */
++#define TCP_KEEPCNT		6	/* Number of keepalives before death */
++#define TCP_SYNCNT		7	/* Number of SYN retransmits */
++#define TCP_LINGER2		8	/* Life time of orphaned FIN-WAIT-2 state */
++#define TCP_DEFER_ACCEPT	9	/* Wake up listener only when data arrive */
++#define TCP_WINDOW_CLAMP	10	/* Bound advertised window */
++#define TCP_INFO		11	/* Information about this connection. */
++#define TCP_QUICKACK		12	/* Block/reenable quick acks */
++#define TCP_CONGESTION		13	/* Congestion control algorithm */
++#define TCP_MD5SIG		14	/* TCP MD5 Signature (RFC2385) */
++#define TCP_THIN_LINEAR_TIMEOUTS 16	/* Use linear timeouts for thin streams*/
++#define TCP_THIN_DUPACK		17	/* Fast retrans. after 1 dupack */
++#define TCP_USER_TIMEOUT	18	/* How long for loss retry before timeout */
++#define TCP_REPAIR		19	/* TCP sock is under repair right now */
++#define TCP_REPAIR_QUEUE	20
++#define TCP_QUEUE_SEQ		21
++#define TCP_REPAIR_OPTIONS	22
++#define TCP_FASTOPEN		23	/* Enable FastOpen on listeners */
++#define TCP_TIMESTAMP		24
++#define TCP_NOTSENT_LOWAT	25	/* limit number of unsent bytes in write queue */
++#define TCP_CC_INFO		26	/* Get Congestion Control (optional) info */
++#define TCP_SAVE_SYN		27	/* Record SYN headers for new connections */
++#define TCP_SAVED_SYN		28	/* Get SYN headers recorded for connection */
++#define TCP_REPAIR_WINDOW	29	/* Get/set window parameters */
++#define TCP_FASTOPEN_CONNECT	30	/* Attempt FastOpen with connect */
++#define TCP_ULP			31	/* Attach a ULP to a TCP connection */
++#define TCP_MD5SIG_EXT		32	/* TCP MD5 Signature with extensions */
++#define TCP_FASTOPEN_KEY	33	/* Set the key for Fast Open (cookie) */
++#define TCP_FASTOPEN_NO_COOKIE	34	/* Enable TFO without a TFO cookie */
++#define TCP_ZEROCOPY_RECEIVE	35
++#define TCP_INQ			36	/* Notify bytes available to read as a cmsg on read */
++
++#define TCP_CM_INQ		TCP_INQ
++
++#define TCP_TX_DELAY		37	/* delay outgoing packets by XX usec */
++
++
++#define TCP_REPAIR_ON		1
++#define TCP_REPAIR_OFF		0
++#define TCP_REPAIR_OFF_NO_WP	-1	/* Turn off without window probes */
++
++struct tcp_repair_opt {
++	__u32	opt_code;
++	__u32	opt_val;
++};
++
++struct tcp_repair_window {
++	__u32	snd_wl1;
++	__u32	snd_wnd;
++	__u32	max_window;
++
++	__u32	rcv_wnd;
++	__u32	rcv_wup;
++};
++
++enum {
++	TCP_NO_QUEUE,
++	TCP_RECV_QUEUE,
++	TCP_SEND_QUEUE,
++	TCP_QUEUES_NR,
++};
++
++/* why fastopen failed from client perspective */
++enum tcp_fastopen_client_fail {
++	TFO_STATUS_UNSPEC, /* catch-all */
++	TFO_COOKIE_UNAVAILABLE, /* if not in TFO_CLIENT_NO_COOKIE mode */
++	TFO_DATA_NOT_ACKED, /* SYN-ACK did not ack SYN data */
++	TFO_SYN_RETRANSMITTED, /* SYN-ACK did not ack SYN data after timeout */
++};
++
++/* for TCP_INFO socket option */
++#define TCPI_OPT_TIMESTAMPS	1
++#define TCPI_OPT_SACK		2
++#define TCPI_OPT_WSCALE		4
++#define TCPI_OPT_ECN		8 /* ECN was negociated at TCP session init */
++#define TCPI_OPT_ECN_SEEN	16 /* we received at least one packet with ECT */
++#define TCPI_OPT_SYN_DATA	32 /* SYN-ACK acked data in SYN sent or rcvd */
++
++/*
++ * Sender's congestion state indicating normal or abnormal situations
++ * in the last round of packets sent. The state is driven by the ACK
++ * information and timer events.
++ */
++enum tcp_ca_state {
++	/*
++	 * Nothing bad has been observed recently.
++	 * No apparent reordering, packet loss, or ECN marks.
++	 */
++	TCP_CA_Open = 0,
++#define TCPF_CA_Open	(1<<TCP_CA_Open)
++	/*
++	 * The sender enters disordered state when it has received DUPACKs or
++	 * SACKs in the last round of packets sent. This could be due to packet
++	 * loss or reordering but needs further information to confirm packets
++	 * have been lost.
++	 */
++	TCP_CA_Disorder = 1,
++#define TCPF_CA_Disorder (1<<TCP_CA_Disorder)
++	/*
++	 * The sender enters Congestion Window Reduction (CWR) state when it
++	 * has received ACKs with ECN-ECE marks, or has experienced congestion
++	 * or packet discard on the sender host (e.g. qdisc).
++	 */
++	TCP_CA_CWR = 2,
++#define TCPF_CA_CWR	(1<<TCP_CA_CWR)
++	/*
++	 * The sender is in fast recovery and retransmitting lost packets,
++	 * typically triggered by ACK events.
++	 */
++	TCP_CA_Recovery = 3,
++#define TCPF_CA_Recovery (1<<TCP_CA_Recovery)
++	/*
++	 * The sender is in loss recovery triggered by retransmission timeout.
++	 */
++	TCP_CA_Loss = 4
++#define TCPF_CA_Loss	(1<<TCP_CA_Loss)
++};
++
++struct tcp_info {
++	__u8	tcpi_state;
++	__u8	tcpi_ca_state;
++	__u8	tcpi_retransmits;
++	__u8	tcpi_probes;
++	__u8	tcpi_backoff;
++	__u8	tcpi_options;
++	__u8	tcpi_snd_wscale : 4, tcpi_rcv_wscale : 4;
++	__u8	tcpi_delivery_rate_app_limited:1, tcpi_fastopen_client_fail:2;
++
++	__u32	tcpi_rto;
++	__u32	tcpi_ato;
++	__u32	tcpi_snd_mss;
++	__u32	tcpi_rcv_mss;
++
++	__u32	tcpi_unacked;
++	__u32	tcpi_sacked;
++	__u32	tcpi_lost;
++	__u32	tcpi_retrans;
++	__u32	tcpi_fackets;
++
++	/* Times. */
++	__u32	tcpi_last_data_sent;
++	__u32	tcpi_last_ack_sent;     /* Not remembered, sorry. */
++	__u32	tcpi_last_data_recv;
++	__u32	tcpi_last_ack_recv;
++
++	/* Metrics. */
++	__u32	tcpi_pmtu;
++	__u32	tcpi_rcv_ssthresh;
++	__u32	tcpi_rtt;
++	__u32	tcpi_rttvar;
++	__u32	tcpi_snd_ssthresh;
++	__u32	tcpi_snd_cwnd;
++	__u32	tcpi_advmss;
++	__u32	tcpi_reordering;
++
++	__u32	tcpi_rcv_rtt;
++	__u32	tcpi_rcv_space;
++
++	__u32	tcpi_total_retrans;
++
++	__u64	tcpi_pacing_rate;
++	__u64	tcpi_max_pacing_rate;
++	__u64	tcpi_bytes_acked;    /* RFC4898 tcpEStatsAppHCThruOctetsAcked */
++	__u64	tcpi_bytes_received; /* RFC4898 tcpEStatsAppHCThruOctetsReceived */
++	__u32	tcpi_segs_out;	     /* RFC4898 tcpEStatsPerfSegsOut */
++	__u32	tcpi_segs_in;	     /* RFC4898 tcpEStatsPerfSegsIn */
++
++	__u32	tcpi_notsent_bytes;
++	__u32	tcpi_min_rtt;
++	__u32	tcpi_data_segs_in;	/* RFC4898 tcpEStatsDataSegsIn */
++	__u32	tcpi_data_segs_out;	/* RFC4898 tcpEStatsDataSegsOut */
++
++	__u64   tcpi_delivery_rate;
++
++	__u64	tcpi_busy_time;      /* Time (usec) busy sending data */
++	__u64	tcpi_rwnd_limited;   /* Time (usec) limited by receive window */
++	__u64	tcpi_sndbuf_limited; /* Time (usec) limited by send buffer */
++
++	__u32	tcpi_delivered;
++	__u32	tcpi_delivered_ce;
++
++	__u64	tcpi_bytes_sent;     /* RFC4898 tcpEStatsPerfHCDataOctetsOut */
++	__u64	tcpi_bytes_retrans;  /* RFC4898 tcpEStatsPerfOctetsRetrans */
++	__u32	tcpi_dsack_dups;     /* RFC4898 tcpEStatsStackDSACKDups */
++	__u32	tcpi_reord_seen;     /* reordering events seen */
++
++	__u32	tcpi_rcv_ooopack;    /* Out-of-order packets received */
++
++	__u32	tcpi_snd_wnd;	     /* peer's advertised receive window after
++				      * scaling (bytes)
++				      */
++	__u32	tcpi_rcv_wnd;	     /* local advertised receive window after
++				      * scaling (bytes)
++				      */
++
++	__u32   tcpi_rehash;         /* PLB or timeout triggered rehash attempts */
++};
++
++/* netlink attributes types for SCM_TIMESTAMPING_OPT_STATS */
++enum {
++	TCP_NLA_PAD,
++	TCP_NLA_BUSY,		/* Time (usec) busy sending data */
++	TCP_NLA_RWND_LIMITED,	/* Time (usec) limited by receive window */
++	TCP_NLA_SNDBUF_LIMITED,	/* Time (usec) limited by send buffer */
++	TCP_NLA_DATA_SEGS_OUT,	/* Data pkts sent including retransmission */
++	TCP_NLA_TOTAL_RETRANS,	/* Data pkts retransmitted */
++	TCP_NLA_PACING_RATE,    /* Pacing rate in bytes per second */
++	TCP_NLA_DELIVERY_RATE,  /* Delivery rate in bytes per second */
++	TCP_NLA_SND_CWND,       /* Sending congestion window */
++	TCP_NLA_REORDERING,     /* Reordering metric */
++	TCP_NLA_MIN_RTT,        /* minimum RTT */
++	TCP_NLA_RECUR_RETRANS,  /* Recurring retransmits for the current pkt */
++	TCP_NLA_DELIVERY_RATE_APP_LMT, /* delivery rate application limited ? */
++	TCP_NLA_SNDQ_SIZE,	/* Data (bytes) pending in send queue */
++	TCP_NLA_CA_STATE,	/* ca_state of socket */
++	TCP_NLA_SND_SSTHRESH,	/* Slow start size threshold */
++	TCP_NLA_DELIVERED,	/* Data pkts delivered incl. out-of-order */
++	TCP_NLA_DELIVERED_CE,	/* Like above but only ones w/ CE marks */
++	TCP_NLA_BYTES_SENT,	/* Data bytes sent including retransmission */
++	TCP_NLA_BYTES_RETRANS,	/* Data bytes retransmitted */
++	TCP_NLA_DSACK_DUPS,	/* DSACK blocks received */
++	TCP_NLA_REORD_SEEN,	/* reordering events seen */
++	TCP_NLA_SRTT,		/* smoothed RTT in usecs */
++	TCP_NLA_TIMEOUT_REHASH, /* Timeout-triggered rehash attempts */
++	TCP_NLA_BYTES_NOTSENT,	/* Bytes in write queue not yet sent */
++	TCP_NLA_EDT,		/* Earliest departure time (CLOCK_MONOTONIC) */
++	TCP_NLA_TTL,		/* TTL or hop limit of a packet received */
++	TCP_NLA_REHASH,         /* PLB and timeout triggered rehash attempts */
++};
++
++/* for TCP_MD5SIG socket option */
++#define TCP_MD5SIG_MAXKEYLEN	80
++
++/* tcp_md5sig extension flags for TCP_MD5SIG_EXT */
++#define TCP_MD5SIG_FLAG_PREFIX		0x1	/* address prefix length */
++#define TCP_MD5SIG_FLAG_IFINDEX		0x2	/* ifindex set */
++
++struct tcp_md5sig {
++	struct __kernel_sockaddr_storage tcpm_addr;	/* address associated */
++	__u8	tcpm_flags;				/* extension flags */
++	__u8	tcpm_prefixlen;				/* address prefix */
++	__u16	tcpm_keylen;				/* key length */
++	int	tcpm_ifindex;				/* device index for scope */
++	__u8	tcpm_key[TCP_MD5SIG_MAXKEYLEN];		/* key (binary) */
++};
++
++/* INET_DIAG_MD5SIG */
++struct tcp_diag_md5sig {
++	__u8	tcpm_family;
++	__u8	tcpm_prefixlen;
++	__u16	tcpm_keylen;
++	__be32	tcpm_addr[4];
++	__u8	tcpm_key[TCP_MD5SIG_MAXKEYLEN];
++};
++
++/* setsockopt(fd, IPPROTO_TCP, TCP_ZEROCOPY_RECEIVE, ...) */
++
++#define TCP_RECEIVE_ZEROCOPY_FLAG_TLB_CLEAN_HINT 0x1
++struct tcp_zerocopy_receive {
++	__u64 address;		/* in: address of mapping */
++	__u32 length;		/* in/out: number of bytes to map/mapped */
++	__u32 recv_skip_hint;	/* out: amount of bytes to skip */
++	__u32 inq; /* out: amount of bytes in read queue */
++	__s32 err; /* out: socket error */
++	__u64 copybuf_address;	/* in: copybuf address (small reads) */
++	__s32 copybuf_len; /* in/out: copybuf bytes avail/used or error */
++	__u32 flags; /* in: flags */
++	__u64 msg_control; /* ancillary data */
++	__u64 msg_controllen;
++	__u32 msg_flags;
++	__u32 reserved; /* set to 0 for now */
++};
++#endif /* _LINUX_TCP_H */
+diff -ruN a/linux/tcp.h.rej b/linux/tcp.h.rej
+--- a/linux/tcp.h.rej	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/tcp.h.rej	2024-02-25 21:25:37.658288714 +0100
+@@ -0,0 +1,22 @@
++--- linux/tcp.h
+++++ linux/tcp.h
++@@ -18,9 +18,11 @@
++ #define _LINUX_TCP_H
++ 
++ #include <linux/types.h>
+++#include <linux/libc-compat.h>
++ #include <asm/byteorder.h>
++ #include <linux/socket.h>
++ 
+++#if __UAPI_DEF_TCPHDR
++ struct tcphdr {
++ 	__be16	source;
++ 	__be16	dest;
++@@ -55,6 +57,7 @@ struct tcphdr {
++ 	__sum16	check;
++ 	__be16	urg_ptr;
++ };
+++#endif
++ 
++ /*
++  *	The union cast uses a gcc extension to avoid aliasing problems
+diff -ruN a/linux/time.h b/linux/time.h
+--- a/linux/time.h	2024-02-25 19:26:17.788101623 +0100
++++ b/linux/time.h	2024-02-25 21:25:42.730355117 +0100
+@@ -68,6 +68,8 @@
+ /*
+  * The various flags for setting POSIX.1b interval timers:
+  */
++#ifndef TIMER_ABSTIME
+ #define TIMER_ABSTIME			0x01
++#endif
+ 
+ #endif /* _LINUX_TIME_H */
+diff -ruN a/linux/time.h.orig b/linux/time.h.orig
+--- a/linux/time.h.orig	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/time.h.orig	2024-02-25 20:39:49.635133283 +0100
+@@ -0,0 +1,73 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef _LINUX_TIME_H
++#define _LINUX_TIME_H
++
++#include <linux/types.h>
++#include <linux/time_types.h>
++
++#ifndef _STRUCT_TIMESPEC
++#define _STRUCT_TIMESPEC
++struct timespec {
++	__kernel_old_time_t	tv_sec;		/* seconds */
++	long			tv_nsec;	/* nanoseconds */
++};
++#endif
++
++struct timeval {
++	__kernel_old_time_t	tv_sec;		/* seconds */
++	__kernel_suseconds_t	tv_usec;	/* microseconds */
++};
++
++struct itimerspec {
++	struct timespec it_interval;/* timer period */
++	struct timespec it_value;	/* timer expiration */
++};
++
++struct itimerval {
++	struct timeval it_interval;/* timer interval */
++	struct timeval it_value;	/* current value */
++};
++
++struct timezone {
++	int	tz_minuteswest;	/* minutes west of Greenwich */
++	int	tz_dsttime;	/* type of dst correction */
++};
++
++/*
++ * Names of the interval timers, and structure
++ * defining a timer setting:
++ */
++#define	ITIMER_REAL		0
++#define	ITIMER_VIRTUAL		1
++#define	ITIMER_PROF		2
++
++/*
++ * The IDs of the various system clocks (for POSIX.1b interval timers):
++ */
++#define CLOCK_REALTIME			0
++#define CLOCK_MONOTONIC			1
++#define CLOCK_PROCESS_CPUTIME_ID	2
++#define CLOCK_THREAD_CPUTIME_ID		3
++#define CLOCK_MONOTONIC_RAW		4
++#define CLOCK_REALTIME_COARSE		5
++#define CLOCK_MONOTONIC_COARSE		6
++#define CLOCK_BOOTTIME			7
++#define CLOCK_REALTIME_ALARM		8
++#define CLOCK_BOOTTIME_ALARM		9
++/*
++ * The driver implementing this got removed. The clock ID is kept as a
++ * place holder. Do not reuse!
++ */
++#define CLOCK_SGI_CYCLE			10
++#define CLOCK_TAI			11
++
++#define MAX_CLOCKS			16
++#define CLOCKS_MASK			(CLOCK_REALTIME | CLOCK_MONOTONIC)
++#define CLOCKS_MONO			CLOCK_MONOTONIC
++
++/*
++ * The various flags for setting POSIX.1b interval timers:
++ */
++#define TIMER_ABSTIME			0x01
++
++#endif /* _LINUX_TIME_H */
+diff -ruN a/linux/time.h.rej b/linux/time.h.rej
+--- a/linux/time.h.rej	1970-01-01 01:00:00.000000000 +0100
++++ b/linux/time.h.rej	2024-02-25 21:25:42.730355117 +0100
+@@ -0,0 +1,55 @@
++--- linux/time.h
+++++ linux/time.h
++@@ -2,25 +2,32 @@
++ #define _LINUX_TIME_H
++ 
++ #include <linux/types.h>
+++#include <linux/libc-compat.h>
++ 
++ 
++ #ifndef _STRUCT_TIMESPEC
++ #define _STRUCT_TIMESPEC
+++#if __UAPI_DEF_TIMESPEC
++ struct timespec {
++ 	__kernel_time_t	tv_sec;			/* seconds */
++ 	long		tv_nsec;		/* nanoseconds */
++ };
++ #endif
+++#endif
++ 
+++#if __UAPI_DEF_TIMEVAL
++ struct timeval {
++ 	__kernel_time_t		tv_sec;		/* seconds */
++ 	__kernel_suseconds_t	tv_usec;	/* microseconds */
++ };
+++#endif
++ 
+++#if __UAPI_DEF_TIMEZONE
++ struct timezone {
++ 	int	tz_minuteswest;	/* minutes west of Greenwich */
++ 	int	tz_dsttime;	/* type of dst correction */
++ };
+++#endif
++ 
++ 
++ /*
++@@ -31,15 +38,19 @@ struct timezone {
++ #define	ITIMER_VIRTUAL		1
++ #define	ITIMER_PROF		2
++ 
+++#if __UAPI_DEF_ITIMERSPEC
++ struct itimerspec {
++ 	struct timespec it_interval;	/* timer period */
++ 	struct timespec it_value;	/* timer expiration */
++ };
+++#endif
++ 
+++#if __UAPI_DEF_ITIMERVAL
++ struct itimerval {
++ 	struct timeval it_interval;	/* timer interval */
++ 	struct timeval it_value;	/* current value */
++ };
+++#endif
++ 
++ /*
++  * The IDs of the various system clocks (for POSIX.1b interval timers):

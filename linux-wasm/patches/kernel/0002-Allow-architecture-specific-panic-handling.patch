@@ -1,0 +1,68 @@
+From 99fe993477b73fab9aeffb8ed96c79319f2abfff Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 14 Sep 2025 17:03:25 +0200
+Subject: [PATCH] Allow architecture-specific panic handling
+
+Debugging panics can be made much easier in hosted architectures (like
+Wasm) if they can intercept panic() calls right when they happen.
+---
+ include/asm-generic/Kbuild  |  1 +
+ include/asm-generic/panic.h | 12 ++++++++++++
+ kernel/panic.c              |  3 +++
+ 3 files changed, 16 insertions(+)
+ create mode 100644 include/asm-generic/panic.h
+
+diff --git a/include/asm-generic/Kbuild b/include/asm-generic/Kbuild
+index 941be574b..f1feb32a4 100644
+--- a/include/asm-generic/Kbuild
++++ b/include/asm-generic/Kbuild
+@@ -42,6 +42,7 @@ mandatory-y += mmu_context.h
+ mandatory-y += module.h
+ mandatory-y += module.lds.h
+ mandatory-y += msi.h
++mandatory-y += panic.h
+ mandatory-y += pci.h
+ mandatory-y += percpu.h
+ mandatory-y += pgalloc.h
+diff --git a/include/asm-generic/panic.h b/include/asm-generic/panic.h
+new file mode 100644
+index 000000000..5f1a0ac69
+--- /dev/null
++++ b/include/asm-generic/panic.h
+@@ -0,0 +1,12 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++
++#ifndef _ASM_GENERIC_PANIC_H
++#define _ASM_GENERIC_PANIC_H
++
++#ifndef CONFIG_ARCH_HAVE_PANIC_NOTIFY
++static inline void arch_panic_notify(const char *msg)
++{
++}
++#endif
++
++#endif /* _ASM_GENERIC_PANIC_H */
+diff --git a/kernel/panic.c b/kernel/panic.c
+index c990ada85..c2343cfc9 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -36,6 +36,7 @@
+ #include <linux/sysfs.h>
+ #include <linux/context_tracking.h>
+ #include <trace/events/error_report.h>
++#include <asm/panic.h>
+ #include <asm/sections.h>
+ 
+ #define PANIC_TIMER_STEP 100
+@@ -397,6 +398,8 @@ void panic(const char *fmt, ...)
+ 
+ 	panic_print_sys_info(true);
+ 
++	arch_panic_notify(buf);
++
+ 	if (!panic_blink)
+ 		panic_blink = no_blink;
+ 
+-- 
+2.25.1
+

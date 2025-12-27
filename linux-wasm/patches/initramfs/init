@@ -1,0 +1,14 @@
+#!/bin/sh
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+
+echo
+echo "Welcome to Linux running on Wasm!"
+echo "Known bugs:"
+echo "   * Terminal input freezes after a while (timer issue)."
+echo "   * dup_fd, wq_worker_comm, rcu_os crash (memory corruption (fixed?))."
+echo "   * longjmp() does not work (not implemented yet)."
+echo
+
+exec /sbin/init -s

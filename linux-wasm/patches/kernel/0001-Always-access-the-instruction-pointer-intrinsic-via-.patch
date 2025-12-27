@@ -1,0 +1,1681 @@
+From a6e4d4d45eaa7dd9878754156643400d0aa4b887 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sat, 16 Dec 2023 13:14:24 +0100
+Subject: [PATCH] Always access the instruction pointer intrinsic via macros
+
+This allows architectures that do not really have an instruction pointer,
+at least not a visible one, to use 0 instead (as a sentinel/dummy value).
+
+The instruction pointer is used for debugging purposes in general kernel
+code. Code that actually uses it as a jump target is arch-specific, and
+there is thus no risk in not using the real program counter value.
+---
+ arch/Kconfig                                  |  5 ++++
+ arch/arm/kernel/return_address.c              |  2 +-
+ arch/arm/kernel/stacktrace.c                  |  2 +-
+ arch/arm/kernel/unwind.c                      |  3 +--
+ drivers/dma/idxd/bus.c                        |  2 +-
+ drivers/gpu/drm/drm_print.c                   | 12 +++++-----
+ .../drm/i915/gem/selftests/i915_gem_context.c |  4 ++--
+ drivers/gpu/drm/i915/i915_utils.c             |  2 +-
+ drivers/gpu/drm/i915/intel_pcode.c            |  4 ++--
+ .../gpu/drm/i915/selftests/igt_flush_test.c   |  4 ++--
+ drivers/gpu/drm/msm/adreno/a5xx_gpu.c         |  2 +-
+ drivers/gpu/drm/msm/adreno/a6xx_gpu.c         |  2 +-
+ .../gpu/drm/msm/disp/dpu1/dpu_hw_interrupts.c |  6 ++---
+ drivers/infiniband/hw/irdma/cm.c              | 18 +++++++-------
+ drivers/infiniband/hw/irdma/hw.c              |  4 ++--
+ drivers/infiniband/hw/irdma/verbs.c           |  4 ++--
+ drivers/iommu/dma-iommu.c                     |  4 ++--
+ drivers/isdn/hardware/mISDN/avmfritz.c        |  2 +-
+ drivers/isdn/hardware/mISDN/hfcmulti.c        |  4 ++--
+ drivers/isdn/hardware/mISDN/hfcpci.c          |  4 ++--
+ drivers/isdn/hardware/mISDN/hfcsusb.c         |  4 ++--
+ drivers/isdn/hardware/mISDN/mISDNipac.c       |  6 ++---
+ drivers/isdn/hardware/mISDN/netjet.c          |  2 +-
+ drivers/isdn/hardware/mISDN/speedfax.c        |  2 +-
+ drivers/isdn/hardware/mISDN/w6692.c           |  4 ++--
+ drivers/isdn/mISDN/l1oip_core.c               |  4 ++--
+ drivers/mfd/mc13xxx-core.c                    |  6 ++---
+ drivers/mtd/ubi/misc.c                        |  4 ++--
+ drivers/nvdimm/bus.c                          |  2 +-
+ drivers/nvdimm/dimm_devs.c                    |  2 +-
+ drivers/parisc/superio.c                      |  2 +-
+ drivers/scsi/arm/fas216.c                     |  2 +-
+ drivers/scsi/esp_scsi.c                       |  2 +-
+ drivers/usb/gadget/function/u_serial.c        |  2 +-
+ drivers/usb/musb/musb_core.c                  | 12 +++++-----
+ fs/afs/rxrpc.c                                | 10 ++++----
+ fs/f2fs/f2fs.h                                |  2 +-
+ fs/hfs/bfind.c                                |  4 ++--
+ fs/hfsplus/bfind.c                            |  4 ++--
+ fs/jfs/super.c                                |  2 +-
+ fs/ocfs2/cluster/heartbeat.c                  |  4 ++--
+ fs/ocfs2/dlm/dlmmaster.c                      |  8 +++----
+ fs/ubifs/misc.c                               |  4 ++--
+ fs/xfs/xfs_buf.h                              |  2 +-
+ fs/xfs/xfs_linux.h                            |  6 ++++-
+ include/linux/ftrace.h                        |  2 +-
+ include/linux/instruction_pointer.h           |  5 ++++
+ kernel/bpf/syscall.c                          |  2 +-
+ kernel/cred.c                                 |  2 +-
+ kernel/dma/direct.c                           |  2 +-
+ kernel/dma/pool.c                             |  2 +-
+ kernel/fork.c                                 |  2 +-
+ kernel/module/main.c                          |  2 +-
+ kernel/panic.c                                |  7 +++---
+ kernel/sched/core.c                           |  2 +-
+ kernel/scs.c                                  |  2 +-
+ lib/smp_processor_id.c                        |  2 +-
+ lib/test_kprobes.c                            | 10 ++++----
+ lib/test_vmalloc.c                            |  6 ++---
+ mm/ioremap.c                                  |  2 +-
+ mm/kasan/shadow.c                             |  4 ++--
+ mm/kmsan/instrumentation.c                    |  2 +-
+ mm/util.c                                     |  2 +-
+ mm/vmalloc.c                                  | 24 +++++++++----------
+ net/core/skbuff.c                             | 14 +++++------
+ net/netfilter/ipvs/ip_vs_conn.c               |  2 +-
+ net/netfilter/ipvs/ip_vs_ctl.c                |  4 ++--
+ net/smc/smc_core.c                            |  4 ++--
+ net/tipc/crypto.c                             |  2 +-
+ samples/bpf/tracex2.bpf.c                     |  2 +-
+ sound/core/device.c                           |  4 ++--
+ 71 files changed, 159 insertions(+), 147 deletions(-)
+
+diff --git a/arch/Kconfig b/arch/Kconfig
+index 171e6b5e6..2111578c8 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -225,6 +225,11 @@ config TRACE_IRQFLAGS_SUPPORT
+ config TRACE_IRQFLAGS_NMI_SUPPORT
+ 	bool
+ 
++config NO_IP
++	bool
++	help
++	  Enable for architectures without (visible) instruction pointer.
++
+ #
+ # An arch should select this if it provides all these things:
+ #
+diff --git a/arch/arm/kernel/return_address.c b/arch/arm/kernel/return_address.c
+index ac15db66d..ae0f70c52 100644
+--- a/arch/arm/kernel/return_address.c
++++ b/arch/arm/kernel/return_address.c
+@@ -42,7 +42,7 @@ void *return_address(unsigned int level)
+ 	frame.sp = current_stack_pointer;
+ 	frame.lr = (unsigned long)__builtin_return_address(0);
+ here:
+-	frame.pc = (unsigned long)&&here;
++	frame.pc = _THIS_IP_;
+ #ifdef CONFIG_KRETPROBES
+ 	frame.kr_cur = NULL;
+ 	frame.tsk = current;
+diff --git a/arch/arm/kernel/stacktrace.c b/arch/arm/kernel/stacktrace.c
+index 620aa82e3..af8c2d6fd 100644
+--- a/arch/arm/kernel/stacktrace.c
++++ b/arch/arm/kernel/stacktrace.c
+@@ -186,7 +186,7 @@ void arch_stack_walk(stack_trace_consume_fn consume_entry, void *cookie,
+ 				  (unsigned long)__builtin_frame_address(0),
+ 				  current_stack_pointer,
+ 				  (unsigned long)__builtin_return_address(0),
+-				  (unsigned long)&&here);
++				  _THIS_IP_);
+ 		/* skip this function */
+ 		if (unwind_frame(&frame))
+ 			return;
+diff --git a/arch/arm/kernel/unwind.c b/arch/arm/kernel/unwind.c
+index 9d2192156..4e4741742 100644
+--- a/arch/arm/kernel/unwind.c
++++ b/arch/arm/kernel/unwind.c
+@@ -542,8 +542,7 @@ void unwind_backtrace(struct pt_regs *regs, struct task_struct *tsk,
+ 		 * point, so we should ensure that frame.pc is within
+ 		 * this block of code.
+ 		 */
+-here:
+-		frame.pc = (unsigned long)&&here;
++		frame.pc = _THIS_IP_;
+ 	} else {
+ 		/* task blocked in __switch_to */
+ 		frame.fp = thread_saved_fp(tsk);
+diff --git a/drivers/dma/idxd/bus.c b/drivers/dma/idxd/bus.c
+index 6f8462105..3e5b2d9b8 100644
+--- a/drivers/dma/idxd/bus.c
++++ b/drivers/dma/idxd/bus.c
+@@ -13,7 +13,7 @@ int __idxd_driver_register(struct idxd_device_driver *idxd_drv, struct module *o
+ 	struct device_driver *drv = &idxd_drv->drv;
+ 
+ 	if (!idxd_drv->type) {
+-		pr_debug("driver type not set (%ps)\n", __builtin_return_address(0));
++		pr_debug("driver type not set (%ps)\n", _RET_IP_);
+ 		return -EINVAL;
+ 	}
+ 
+diff --git a/drivers/gpu/drm/drm_print.c b/drivers/gpu/drm/drm_print.c
+index 5b93c1189..5e6187bbf 100644
+--- a/drivers/gpu/drm/drm_print.c
++++ b/drivers/gpu/drm/drm_print.c
+@@ -270,10 +270,10 @@ void drm_dev_printk(const struct device *dev, const char *level,
+ 
+ 	if (dev)
+ 		dev_printk(level, dev, "[" DRM_NAME ":%ps] %pV",
+-			   __builtin_return_address(0), &vaf);
++			   _RET_IP_, &vaf);
+ 	else
+ 		printk("%s" "[" DRM_NAME ":%ps] %pV",
+-		       level, __builtin_return_address(0), &vaf);
++		       level, _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ }
+@@ -295,10 +295,10 @@ void __drm_dev_dbg(struct _ddebug *desc, const struct device *dev,
+ 
+ 	if (dev)
+ 		dev_printk(KERN_DEBUG, dev, "[" DRM_NAME ":%ps] %pV",
+-			   __builtin_return_address(0), &vaf);
++			   _RET_IP_, &vaf);
+ 	else
+ 		printk(KERN_DEBUG "[" DRM_NAME ":%ps] %pV",
+-		       __builtin_return_address(0), &vaf);
++		       _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ }
+@@ -317,7 +317,7 @@ void ___drm_dbg(struct _ddebug *desc, enum drm_debug_category category, const ch
+ 	vaf.va = &args;
+ 
+ 	printk(KERN_DEBUG "[" DRM_NAME ":%ps] %pV",
+-	       __builtin_return_address(0), &vaf);
++	       _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ }
+@@ -333,7 +333,7 @@ void __drm_err(const char *format, ...)
+ 	vaf.va = &args;
+ 
+ 	printk(KERN_ERR "[" DRM_NAME ":%ps] *ERROR* %pV",
+-	       __builtin_return_address(0), &vaf);
++	       _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ }
+diff --git a/drivers/gpu/drm/i915/gem/selftests/i915_gem_context.c b/drivers/gpu/drm/i915/gem/selftests/i915_gem_context.c
+index 7b516b1a4..35f1647b3 100644
+--- a/drivers/gpu/drm/i915/gem/selftests/i915_gem_context.c
++++ b/drivers/gpu/drm/i915/gem/selftests/i915_gem_context.c
+@@ -525,7 +525,7 @@ static noinline int cpu_check(struct drm_i915_gem_object *obj,
+ 		for (m = 0; m < max; m++) {
+ 			if (map[m] != m) {
+ 				pr_err("%pS: Invalid value at object %d page %ld/%ld, offset %d/%d: found %x expected %x\n",
+-				       __builtin_return_address(0), idx,
++				       _RET_IP_, idx,
+ 				       n, real_page_count(obj), m, max,
+ 				       map[m], m);
+ 				err = -EINVAL;
+@@ -536,7 +536,7 @@ static noinline int cpu_check(struct drm_i915_gem_object *obj,
+ 		for (; m < DW_PER_PAGE; m++) {
+ 			if (map[m] != STACK_MAGIC) {
+ 				pr_err("%pS: Invalid value at object %d page %ld, offset %d: found %x expected %x (uninitialised)\n",
+-				       __builtin_return_address(0), idx, n, m,
++				       _RET_IP_, idx, n, m,
+ 				       map[m], STACK_MAGIC);
+ 				err = -EINVAL;
+ 				goto out_unmap;
+diff --git a/drivers/gpu/drm/i915/i915_utils.c b/drivers/gpu/drm/i915/i915_utils.c
+index 29fd02bf5..e93475acb 100644
+--- a/drivers/gpu/drm/i915/i915_utils.c
++++ b/drivers/gpu/drm/i915/i915_utils.c
+@@ -35,7 +35,7 @@ __i915_printk(struct drm_i915_private *dev_priv, const char *level,
+ 		dev_printk(level, kdev, "%pV", &vaf);
+ 	else
+ 		dev_printk(level, kdev, "[" DRM_NAME ":%ps] %pV",
+-			   __builtin_return_address(0), &vaf);
++			   _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ 
+diff --git a/drivers/gpu/drm/i915/intel_pcode.c b/drivers/gpu/drm/i915/intel_pcode.c
+index 3db2ba439..78850c3a3 100644
+--- a/drivers/gpu/drm/i915/intel_pcode.c
++++ b/drivers/gpu/drm/i915/intel_pcode.c
+@@ -103,7 +103,7 @@ int snb_pcode_read(struct intel_uncore *uncore, u32 mbox, u32 *val, u32 *val1)
+ 	if (err) {
+ 		drm_dbg(&uncore->i915->drm,
+ 			"warning: pcode (read from mbox %x) mailbox access failed for %ps: %d\n",
+-			mbox, __builtin_return_address(0), err);
++			mbox, _RET_IP_, err);
+ 	}
+ 
+ 	return err;
+@@ -122,7 +122,7 @@ int snb_pcode_write_timeout(struct intel_uncore *uncore, u32 mbox, u32 val,
+ 	if (err) {
+ 		drm_dbg(&uncore->i915->drm,
+ 			"warning: pcode (write of 0x%08x to mbox %x) mailbox access failed for %ps: %d\n",
+-			val, mbox, __builtin_return_address(0), err);
++			val, mbox, _RET_IP_, err);
+ 	}
+ 
+ 	return err;
+diff --git a/drivers/gpu/drm/i915/selftests/igt_flush_test.c b/drivers/gpu/drm/i915/selftests/igt_flush_test.c
+index 29110abb4..80fe1a252 100644
+--- a/drivers/gpu/drm/i915/selftests/igt_flush_test.c
++++ b/drivers/gpu/drm/i915/selftests/igt_flush_test.c
+@@ -26,10 +26,10 @@ int igt_flush_test(struct drm_i915_private *i915)
+ 
+ 		if (intel_gt_wait_for_idle(gt, HZ * 3) == -ETIME) {
+ 			pr_err("%pS timed out, cancelling all further testing.\n",
+-			       __builtin_return_address(0));
++			       _RET_IP_);
+ 
+ 			GEM_TRACE("%pS timed out.\n",
+-				  __builtin_return_address(0));
++				  _RET_IP_);
+ 			GEM_TRACE_DUMP();
+ 
+ 			intel_gt_set_wedged(gt);
+diff --git a/drivers/gpu/drm/msm/adreno/a5xx_gpu.c b/drivers/gpu/drm/msm/adreno/a5xx_gpu.c
+index bbb1bf33f..84eade7ec 100644
+--- a/drivers/gpu/drm/msm/adreno/a5xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a5xx_gpu.c
+@@ -1082,7 +1082,7 @@ bool a5xx_idle(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
+ 
+ 	if (spin_until(_a5xx_check_idle(gpu))) {
+ 		DRM_ERROR("%s: %ps: timeout waiting for GPU to idle: status %8.8X irq %8.8X rptr/wptr %d/%d\n",
+-			gpu->name, __builtin_return_address(0),
++			gpu->name, _RET_IP_,
+ 			gpu_read(gpu, REG_A5XX_RBBM_STATUS),
+ 			gpu_read(gpu, REG_A5XX_RBBM_INT_0_STATUS),
+ 			gpu_read(gpu, REG_A5XX_CP_RB_RPTR),
+diff --git a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
+index bdda1a633..f8d66ecb7 100644
+--- a/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a6xx_gpu.c
+@@ -41,7 +41,7 @@ static bool a6xx_idle(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
+ 
+ 	if (spin_until(_a6xx_check_idle(gpu))) {
+ 		DRM_ERROR("%s: %ps: timeout waiting for GPU to idle: status %8.8X irq %8.8X rptr/wptr %d/%d\n",
+-			gpu->name, __builtin_return_address(0),
++			gpu->name, _RET_IP_,
+ 			gpu_read(gpu, REG_A6XX_RBBM_STATUS),
+ 			gpu_read(gpu, REG_A6XX_RBBM_INT_0_STATUS),
+ 			gpu_read(gpu, REG_A6XX_CP_RB_RPTR),
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_interrupts.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_interrupts.c
+index 17f3e7e4f..86ead4fea 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_interrupts.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_interrupts.c
+@@ -392,7 +392,7 @@ u32 dpu_core_irq_read(struct dpu_kms *dpu_kms, int irq_idx)
+ 
+ 	if (irq_idx < 0) {
+ 		DPU_ERROR("[%pS] invalid irq_idx=%d\n",
+-				__builtin_return_address(0), irq_idx);
++				_RET_IP_, irq_idx);
+ 		return 0;
+ 	}
+ 
+@@ -471,7 +471,7 @@ int dpu_core_irq_register_callback(struct dpu_kms *dpu_kms, int irq_idx,
+ 		return -EINVAL;
+ 	}
+ 
+-	VERB("[%pS] irq_idx=%d\n", __builtin_return_address(0), irq_idx);
++	VERB("[%pS] irq_idx=%d\n", _RET_IP_, irq_idx);
+ 
+ 	spin_lock_irqsave(&dpu_kms->hw_intr->irq_lock, irq_flags);
+ 
+@@ -508,7 +508,7 @@ int dpu_core_irq_unregister_callback(struct dpu_kms *dpu_kms, int irq_idx)
+ 		return -EINVAL;
+ 	}
+ 
+-	VERB("[%pS] irq_idx=%d\n", __builtin_return_address(0), irq_idx);
++	VERB("[%pS] irq_idx=%d\n", _RET_IP_, irq_idx);
+ 
+ 	spin_lock_irqsave(&dpu_kms->hw_intr->irq_lock, irq_flags);
+ 	trace_dpu_core_irq_unregister_callback(irq_idx);
+diff --git a/drivers/infiniband/hw/irdma/cm.c b/drivers/infiniband/hw/irdma/cm.c
+index 70009b970..2852ba1d3 100644
+--- a/drivers/infiniband/hw/irdma/cm.c
++++ b/drivers/infiniband/hw/irdma/cm.c
+@@ -165,7 +165,7 @@ static int irdma_send_cm_event(struct irdma_cm_node *cm_node,
+ 	event.event = type;
+ 	event.status = status;
+ 	trace_irdma_send_cm_event(cm_node, cm_id, type, status,
+-				  __builtin_return_address(0));
++				  _RET_IP_);
+ 
+ 	ibdev_dbg(&cm_node->iwdev->ibdev,
+ 		  "CM: cm_node %p cm_id=%p state=%d accel=%d event_type=%d status=%d\n",
+@@ -252,7 +252,7 @@ static struct irdma_cm_event *irdma_create_event(struct irdma_cm_node *cm_node,
+ 		  "CM: node=%p event=%p type=%u dst=%pI4 src=%pI4\n", cm_node,
+ 		  event, type, event->cm_info.loc_addr,
+ 		  event->cm_info.rem_addr);
+-	trace_irdma_create_event(cm_node, type, __builtin_return_address(0));
++	trace_irdma_create_event(cm_node, type, _RET_IP_);
+ 	irdma_cm_post_event(event);
+ 
+ 	return event;
+@@ -595,7 +595,7 @@ int irdma_send_reset(struct irdma_cm_node *cm_node)
+ 	struct irdma_puda_buf *sqbuf;
+ 	int flags = SET_RST | SET_ACK;
+ 
+-	trace_irdma_send_reset(cm_node, 0, __builtin_return_address(0));
++	trace_irdma_send_reset(cm_node, 0, _RET_IP_);
+ 	sqbuf = cm_node->cm_core->form_cm_frame(cm_node, NULL, NULL, NULL,
+ 						flags);
+ 	if (!sqbuf)
+@@ -603,7 +603,7 @@ int irdma_send_reset(struct irdma_cm_node *cm_node)
+ 
+ 	ibdev_dbg(&cm_node->iwdev->ibdev,
+ 		  "CM: caller: %pS cm_node %p cm_id=%p accel=%d state=%d rem_port=0x%04x, loc_port=0x%04x rem_addr=%pI4 loc_addr=%pI4\n",
+-		  __builtin_return_address(0), cm_node, cm_node->cm_id,
++		  _RET_IP_, cm_node, cm_node->cm_id,
+ 		  cm_node->accelerated, cm_node->state, cm_node->rem_port,
+ 		  cm_node->loc_port, cm_node->rem_addr, cm_node->loc_addr);
+ 
+@@ -619,7 +619,7 @@ int irdma_send_reset(struct irdma_cm_node *cm_node)
+ static void irdma_active_open_err(struct irdma_cm_node *cm_node, bool reset)
+ {
+ 	trace_irdma_active_open_err(cm_node, reset,
+-				    __builtin_return_address(0));
++				    _RET_IP_);
+ 	irdma_cleanup_retrans_entry(cm_node);
+ 	cm_node->cm_core->stats_connect_errs++;
+ 	if (reset) {
+@@ -647,7 +647,7 @@ static void irdma_passive_open_err(struct irdma_cm_node *cm_node, bool reset)
+ 	ibdev_dbg(&cm_node->iwdev->ibdev, "CM: cm_node=%p state =%d\n",
+ 		  cm_node, cm_node->state);
+ 	trace_irdma_passive_open_err(cm_node, reset,
+-				     __builtin_return_address(0));
++				     _RET_IP_);
+ 	if (reset)
+ 		irdma_send_reset(cm_node);
+ 	else
+@@ -1837,7 +1837,7 @@ static int irdma_dec_refcnt_listen(struct irdma_cm_core *cm_core,
+ 	enum irdma_cm_node_state old_state;
+ 	unsigned long flags;
+ 
+-	trace_irdma_dec_refcnt_listen(listener, __builtin_return_address(0));
++	trace_irdma_dec_refcnt_listen(listener, _RET_IP_);
+ 	/* free non-accelerated child nodes for this listener */
+ 	INIT_LIST_HEAD(&reset_list);
+ 	if (free_hanging_nodes) {
+@@ -2374,7 +2374,7 @@ void irdma_rem_ref_cm_node(struct irdma_cm_node *cm_node)
+ 	struct irdma_cm_core *cm_core = cm_node->cm_core;
+ 	unsigned long flags;
+ 
+-	trace_irdma_rem_ref_cm_node(cm_node, 0, __builtin_return_address(0));
++	trace_irdma_rem_ref_cm_node(cm_node, 0, _RET_IP_);
+ 	spin_lock_irqsave(&cm_core->ht_lock, flags);
+ 
+ 	if (!refcount_dec_and_test(&cm_node->refcnt)) {
+@@ -2462,7 +2462,7 @@ static void irdma_handle_rst_pkt(struct irdma_cm_node *cm_node,
+ {
+ 	ibdev_dbg(&cm_node->iwdev->ibdev,
+ 		  "CM: caller: %pS cm_node=%p state=%d rem_port=0x%04x loc_port=0x%04x rem_addr=%pI4 loc_addr=%pI4\n",
+-		  __builtin_return_address(0), cm_node, cm_node->state,
++		  _RET_IP_, cm_node, cm_node->state,
+ 		  cm_node->rem_port, cm_node->loc_port, cm_node->rem_addr,
+ 		  cm_node->loc_addr);
+ 
+diff --git a/drivers/infiniband/hw/irdma/hw.c b/drivers/infiniband/hw/irdma/hw.c
+index 457368e32..6734d4aae 100644
+--- a/drivers/infiniband/hw/irdma/hw.c
++++ b/drivers/infiniband/hw/irdma/hw.c
+@@ -2485,7 +2485,7 @@ int irdma_manage_qhash(struct irdma_device *iwdev, struct irdma_cm_info *cminfo,
+ 		ibdev_dbg(&iwdev->ibdev,
+ 			  "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI4 rem_addr=%pI4 mac=%pM, vlan_id=%d cm_node=%p\n",
+ 			  (!mtype) ? "DELETE" : "ADD",
+-			  __builtin_return_address(0), info->dest_port,
++			  _RET_IP_, info->dest_port,
+ 			  info->src_port, info->dest_ip, info->src_ip,
+ 			  info->mac_addr, cminfo->vlan_id,
+ 			  cmnode ? cmnode : NULL);
+@@ -2493,7 +2493,7 @@ int irdma_manage_qhash(struct irdma_device *iwdev, struct irdma_cm_info *cminfo,
+ 		ibdev_dbg(&iwdev->ibdev,
+ 			  "CM: %s caller: %pS loc_port=0x%04x rem_port=0x%04x loc_addr=%pI6 rem_addr=%pI6 mac=%pM, vlan_id=%d cm_node=%p\n",
+ 			  (!mtype) ? "DELETE" : "ADD",
+-			  __builtin_return_address(0), info->dest_port,
++			  _RET_IP_, info->dest_port,
+ 			  info->src_port, info->dest_ip, info->src_ip,
+ 			  info->mac_addr, cminfo->vlan_id,
+ 			  cmnode ? cmnode : NULL);
+diff --git a/drivers/infiniband/hw/irdma/verbs.c b/drivers/infiniband/hw/irdma/verbs.c
+index 20d70f0d2..2b21f0a7a 100644
+--- a/drivers/infiniband/hw/irdma/verbs.c
++++ b/drivers/infiniband/hw/irdma/verbs.c
+@@ -1287,7 +1287,7 @@ int irdma_modify_qp_roce(struct ib_qp *ibqp, struct ib_qp_attr *attr,
+ 
+ 	ibdev_dbg(&iwdev->ibdev,
+ 		  "VERBS: caller: %pS qp_id=%d to_ibqpstate=%d ibqpstate=%d irdma_qpstate=%d attr_mask=0x%x\n",
+-		  __builtin_return_address(0), ibqp->qp_num, attr->qp_state,
++		  _RET_IP_, ibqp->qp_num, attr->qp_state,
+ 		  iwqp->ibqp_state, iwqp->iwarp_state, attr_mask);
+ 
+ 	spin_lock_irqsave(&iwqp->lock, flags);
+@@ -1492,7 +1492,7 @@ int irdma_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr, int attr_mask,
+ 	wait_event(iwqp->mod_qp_waitq, !atomic_read(&iwqp->hw_mod_qp_pend));
+ 	ibdev_dbg(&iwdev->ibdev,
+ 		  "VERBS: caller: %pS qp_id=%d to_ibqpstate=%d ibqpstate=%d irdma_qpstate=%d last_aeq=%d hw_tcp_state=%d hw_iwarp_state=%d attr_mask=0x%x\n",
+-		  __builtin_return_address(0), ibqp->qp_num, attr->qp_state,
++		  _RET_IP_, ibqp->qp_num, attr->qp_state,
+ 		  iwqp->ibqp_state, iwqp->iwarp_state, iwqp->last_aeq,
+ 		  iwqp->hw_tcp_state, iwqp->hw_iwarp_state, attr_mask);
+ 
+diff --git a/drivers/iommu/dma-iommu.c b/drivers/iommu/dma-iommu.c
+index 7a9f0b0bd..17ec3dead 100644
+--- a/drivers/iommu/dma-iommu.c
++++ b/drivers/iommu/dma-iommu.c
+@@ -876,7 +876,7 @@ static void *iommu_dma_alloc_remap(struct device *dev, size_t size,
+ 	*dma_handle = sgt.sgl->dma_address;
+ 	sg_free_table(&sgt);
+ 	vaddr = dma_common_pages_remap(pages, size, prot,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ 	if (!vaddr)
+ 		goto out_unmap;
+ 	return vaddr;
+@@ -1429,7 +1429,7 @@ static void *iommu_dma_alloc_pages(struct device *dev, size_t size,
+ 		pgprot_t prot = dma_pgprot(dev, PAGE_KERNEL, attrs);
+ 
+ 		cpu_addr = dma_common_contiguous_remap(page, alloc_size,
+-				prot, __builtin_return_address(0));
++				prot, _RET_IP_);
+ 		if (!cpu_addr)
+ 			goto out_free_pages;
+ 
+diff --git a/drivers/isdn/hardware/mISDN/avmfritz.c b/drivers/isdn/hardware/mISDN/avmfritz.c
+index f68569bfe..9fa4ef477 100644
+--- a/drivers/isdn/hardware/mISDN/avmfritz.c
++++ b/drivers/isdn/hardware/mISDN/avmfritz.c
+@@ -935,7 +935,7 @@ avm_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 		break;
+ 	case CLOSE_CHANNEL:
+ 		pr_debug("%s: dev(%d) close from %p\n", fc->name, dch->dev.id,
+-			 __builtin_return_address(0));
++			 _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/hardware/mISDN/hfcmulti.c b/drivers/isdn/hardware/mISDN/hfcmulti.c
+index 2e5cb9dde..1692ab7c7 100644
+--- a/drivers/isdn/hardware/mISDN/hfcmulti.c
++++ b/drivers/isdn/hardware/mISDN/hfcmulti.c
+@@ -4020,7 +4020,7 @@ open_dchannel(struct hfc_multi *hc, struct dchannel *dch,
+ 
+ 	if (debug & DEBUG_HW_OPEN)
+ 		printk(KERN_DEBUG "%s: dev(%d) open from %p\n", __func__,
+-		       dch->dev.id, __builtin_return_address(0));
++		       dch->dev.id, _RET_IP_);
+ 	if (rq->protocol == ISDN_P_NONE)
+ 		return -EINVAL;
+ 	if ((dch->dev.D.protocol != ISDN_P_NONE) &&
+@@ -4180,7 +4180,7 @@ hfcm_dctrl(struct mISDNchannel *ch, u_int cmd, void *arg)
+ 		if (debug & DEBUG_HW_OPEN)
+ 			printk(KERN_DEBUG "%s: dev(%d) close from %p\n",
+ 			       __func__, dch->dev.id,
+-			       __builtin_return_address(0));
++			       _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/hardware/mISDN/hfcpci.c b/drivers/isdn/hardware/mISDN/hfcpci.c
+index fe391de1a..59c141f87 100644
+--- a/drivers/isdn/hardware/mISDN/hfcpci.c
++++ b/drivers/isdn/hardware/mISDN/hfcpci.c
+@@ -1882,7 +1882,7 @@ open_dchannel(struct hfc_pci *hc, struct mISDNchannel *ch,
+ 
+ 	if (debug & DEBUG_HW_OPEN)
+ 		printk(KERN_DEBUG "%s: dev(%d) open from %p\n", __func__,
+-		       hc->dch.dev.id, __builtin_return_address(0));
++		       hc->dch.dev.id, _RET_IP_);
+ 	if (rq->protocol == ISDN_P_NONE)
+ 		return -EINVAL;
+ 	if (rq->adr.channel == 1) {
+@@ -1973,7 +1973,7 @@ hfc_dctrl(struct mISDNchannel *ch, u_int cmd, void *arg)
+ 		if (debug & DEBUG_HW_OPEN)
+ 			printk(KERN_DEBUG "%s: dev(%d) close from %p\n",
+ 			       __func__, hc->dch.dev.id,
+-			       __builtin_return_address(0));
++			       _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/hardware/mISDN/hfcsusb.c b/drivers/isdn/hardware/mISDN/hfcsusb.c
+index 1efd17979..a3f539268 100644
+--- a/drivers/isdn/hardware/mISDN/hfcsusb.c
++++ b/drivers/isdn/hardware/mISDN/hfcsusb.c
+@@ -420,7 +420,7 @@ open_dchannel(struct hfcsusb *hw, struct mISDNchannel *ch,
+ 	if (debug & DEBUG_HW_OPEN)
+ 		printk(KERN_DEBUG "%s: %s: dev(%d) open addr(%i) from %p\n",
+ 		       hw->name, __func__, hw->dch.dev.id, rq->adr.channel,
+-		       __builtin_return_address(0));
++		       _RET_IP_);
+ 	if (rq->protocol == ISDN_P_NONE)
+ 		return -EINVAL;
+ 
+@@ -546,7 +546,7 @@ hfc_dctrl(struct mISDNchannel *ch, u_int cmd, void *arg)
+ 			printk(KERN_DEBUG
+ 			       "%s: %s: dev(%d) close from %p (open %d)\n",
+ 			       hw->name, __func__, hw->dch.dev.id,
+-			       __builtin_return_address(0), hw->open);
++			       _RET_IP_, hw->open);
+ 		if (!hw->open) {
+ 			hfcsusb_stop_endpoint(hw, HFC_CHAN_D);
+ 			if (hw->fifos[HFCUSB_PCM_RX].pipe)
+diff --git a/drivers/isdn/hardware/mISDN/mISDNipac.c b/drivers/isdn/hardware/mISDN/mISDNipac.c
+index 4f8d85bb3..e86063ece 100644
+--- a/drivers/isdn/hardware/mISDN/mISDNipac.c
++++ b/drivers/isdn/hardware/mISDN/mISDNipac.c
+@@ -760,7 +760,7 @@ open_dchannel_caller(struct isac_hw *isac, struct channel_req *rq, void *caller)
+ static int
+ open_dchannel(struct isac_hw *isac, struct channel_req *rq)
+ {
+-	return open_dchannel_caller(isac, rq, __builtin_return_address(0));
++	return open_dchannel_caller(isac, rq, _RET_IP_);
+ }
+ 
+ static const char *ISACVer[] =
+@@ -1536,7 +1536,7 @@ ipac_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 	case OPEN_CHANNEL:
+ 		rq = arg;
+ 		if (rq->protocol == ISDN_P_TE_S0)
+-			err = open_dchannel_caller(isac, rq, __builtin_return_address(0));
++			err = open_dchannel_caller(isac, rq, _RET_IP_);
+ 		else
+ 			err = open_bchannel(ipac, rq);
+ 		if (err)
+@@ -1546,7 +1546,7 @@ ipac_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 		break;
+ 	case CLOSE_CHANNEL:
+ 		pr_debug("%s: dev(%d) close from %p\n", ipac->name,
+-			 dch->dev.id, __builtin_return_address(0));
++			 dch->dev.id, _RET_IP_);
+ 		module_put(ipac->owner);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/hardware/mISDN/netjet.c b/drivers/isdn/hardware/mISDN/netjet.c
+index 566c790a9..4dc6e9899 100644
+--- a/drivers/isdn/hardware/mISDN/netjet.c
++++ b/drivers/isdn/hardware/mISDN/netjet.c
+@@ -890,7 +890,7 @@ nj_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 		break;
+ 	case CLOSE_CHANNEL:
+ 		pr_debug("%s: dev(%d) close from %p\n", card->name, dch->dev.id,
+-			 __builtin_return_address(0));
++			 _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/hardware/mISDN/speedfax.c b/drivers/isdn/hardware/mISDN/speedfax.c
+index b530c78ec..d4064cbf2 100644
+--- a/drivers/isdn/hardware/mISDN/speedfax.c
++++ b/drivers/isdn/hardware/mISDN/speedfax.c
+@@ -256,7 +256,7 @@ sfax_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 		break;
+ 	case CLOSE_CHANNEL:
+ 		pr_debug("%s: dev(%d) close from %p\n", sf->name,
+-			 dch->dev.id, __builtin_return_address(0));
++			 dch->dev.id, _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/hardware/mISDN/w6692.c b/drivers/isdn/hardware/mISDN/w6692.c
+index f3b8db7b4..8c95e1fbf 100644
+--- a/drivers/isdn/hardware/mISDN/w6692.c
++++ b/drivers/isdn/hardware/mISDN/w6692.c
+@@ -1186,7 +1186,7 @@ w6692_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 	case OPEN_CHANNEL:
+ 		rq = arg;
+ 		if (rq->protocol == ISDN_P_TE_S0)
+-			err = open_dchannel(card, rq, __builtin_return_address(0));
++			err = open_dchannel(card, rq, _RET_IP_);
+ 		else
+ 			err = open_bchannel(card, rq);
+ 		if (err)
+@@ -1196,7 +1196,7 @@ w6692_dctrl(struct mISDNchannel *ch, u32 cmd, void *arg)
+ 		break;
+ 	case CLOSE_CHANNEL:
+ 		pr_debug("%s: dev(%d) close from %p\n", card->name,
+-			 dch->dev.id, __builtin_return_address(0));
++			 dch->dev.id, _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/isdn/mISDN/l1oip_core.c b/drivers/isdn/mISDN/l1oip_core.c
+index f010b35a0..450007d17 100644
+--- a/drivers/isdn/mISDN/l1oip_core.c
++++ b/drivers/isdn/mISDN/l1oip_core.c
+@@ -979,7 +979,7 @@ open_dchannel(struct l1oip *hc, struct dchannel *dch, struct channel_req *rq)
+ {
+ 	if (debug & DEBUG_HW_OPEN)
+ 		printk(KERN_DEBUG "%s: dev(%d) open from %p\n", __func__,
+-		       dch->dev.id, __builtin_return_address(0));
++		       dch->dev.id, _RET_IP_);
+ 	if (rq->protocol == ISDN_P_NONE)
+ 		return -EINVAL;
+ 	if ((dch->dev.D.protocol != ISDN_P_NONE) &&
+@@ -1067,7 +1067,7 @@ l1oip_dctrl(struct mISDNchannel *ch, u_int cmd, void *arg)
+ 		if (debug & DEBUG_HW_OPEN)
+ 			printk(KERN_DEBUG "%s: dev(%d) close from %p\n",
+ 			       __func__, dch->dev.id,
+-			       __builtin_return_address(0));
++			       _RET_IP_);
+ 		module_put(THIS_MODULE);
+ 		break;
+ 	case CONTROL_CHANNEL:
+diff --git a/drivers/mfd/mc13xxx-core.c b/drivers/mfd/mc13xxx-core.c
+index 100057276..5879adca6 100644
+--- a/drivers/mfd/mc13xxx-core.c
++++ b/drivers/mfd/mc13xxx-core.c
+@@ -49,19 +49,19 @@ void mc13xxx_lock(struct mc13xxx *mc13xxx)
+ {
+ 	if (!mutex_trylock(&mc13xxx->lock)) {
+ 		dev_dbg(mc13xxx->dev, "wait for %s from %ps\n",
+-				__func__, __builtin_return_address(0));
++				__func__, _RET_IP_);
+ 
+ 		mutex_lock(&mc13xxx->lock);
+ 	}
+ 	dev_dbg(mc13xxx->dev, "%s from %ps\n",
+-			__func__, __builtin_return_address(0));
++			__func__, _RET_IP_);
+ }
+ EXPORT_SYMBOL(mc13xxx_lock);
+ 
+ void mc13xxx_unlock(struct mc13xxx *mc13xxx)
+ {
+ 	dev_dbg(mc13xxx->dev, "%s from %ps\n",
+-			__func__, __builtin_return_address(0));
++			__func__, _RET_IP_);
+ 	mutex_unlock(&mc13xxx->lock);
+ }
+ EXPORT_SYMBOL(mc13xxx_unlock);
+diff --git a/drivers/mtd/ubi/misc.c b/drivers/mtd/ubi/misc.c
+index 1794d66b6..72ffe4168 100644
+--- a/drivers/mtd/ubi/misc.c
++++ b/drivers/mtd/ubi/misc.c
+@@ -169,7 +169,7 @@ void ubi_warn(const struct ubi_device *ubi, const char *fmt, ...)
+ 	vaf.va = &args;
+ 
+ 	pr_warn(UBI_NAME_STR "%d warning: %ps: %pV\n",
+-		ubi->ubi_num, __builtin_return_address(0), &vaf);
++		ubi->ubi_num, _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ }
+@@ -186,6 +186,6 @@ void ubi_err(const struct ubi_device *ubi, const char *fmt, ...)
+ 	vaf.va = &args;
+ 
+ 	pr_err(UBI_NAME_STR "%d error: %ps: %pV\n",
+-	       ubi->ubi_num, __builtin_return_address(0), &vaf);
++	       ubi->ubi_num, _RET_IP_, &vaf);
+ 	va_end(args);
+ }
+diff --git a/drivers/nvdimm/bus.c b/drivers/nvdimm/bus.c
+index 954dbc105..1b8c859a5 100644
+--- a/drivers/nvdimm/bus.c
++++ b/drivers/nvdimm/bus.c
+@@ -603,7 +603,7 @@ int __nd_driver_register(struct nd_device_driver *nd_drv, struct module *owner,
+ 
+ 	if (!nd_drv->type) {
+ 		pr_debug("driver type bitmask not set (%ps)\n",
+-				__builtin_return_address(0));
++				_RET_IP_);
+ 		return -EINVAL;
+ 	}
+ 
+diff --git a/drivers/nvdimm/dimm_devs.c b/drivers/nvdimm/dimm_devs.c
+index 957f7c3d1..982359e79 100644
+--- a/drivers/nvdimm/dimm_devs.c
++++ b/drivers/nvdimm/dimm_devs.c
+@@ -47,7 +47,7 @@ static int validate_dimm(struct nvdimm_drvdata *ndd)
+ 	rc = nvdimm_check_config_data(ndd->dev);
+ 	if (rc)
+ 		dev_dbg(ndd->dev, "%ps: %s error: %d\n",
+-				__builtin_return_address(0), __func__, rc);
++				_RET_IP_, __func__, rc);
+ 	return rc;
+ }
+ 
+diff --git a/drivers/parisc/superio.c b/drivers/parisc/superio.c
+index e973c6893..b68e99a74 100644
+--- a/drivers/parisc/superio.c
++++ b/drivers/parisc/superio.c
+@@ -347,7 +347,7 @@ int superio_fixup_irq(struct pci_dev *pcidev)
+ 	printk(KERN_DEBUG "superio_fixup_irq(%s) ven 0x%x dev 0x%x from %ps\n",
+ 		pci_name(pcidev),
+ 		pcidev->vendor, pcidev->device,
+-		__builtin_return_address(0));
++		_RET_IP_);
+ #endif
+ 
+ 	for (i = 0; i < 16; i++) {
+diff --git a/drivers/scsi/arm/fas216.c b/drivers/scsi/arm/fas216.c
+index 4ce0b2d73..3415707c8 100644
+--- a/drivers/scsi/arm/fas216.c
++++ b/drivers/scsi/arm/fas216.c
+@@ -368,7 +368,7 @@ static int cmd_ptr;
+ static void fas216_cmd(FAS216_Info *info, unsigned int command)
+ {
+ 	cmd_list[cmd_ptr].command = command;
+-	cmd_list[cmd_ptr].from = __builtin_return_address(0);
++	cmd_list[cmd_ptr].from = _RET_IP_;
+ 
+ 	cmd_ptr = (cmd_ptr + 1) & 7;
+ 
+diff --git a/drivers/scsi/esp_scsi.c b/drivers/scsi/esp_scsi.c
+index 97816a0e6..2cead0278 100644
+--- a/drivers/scsi/esp_scsi.c
++++ b/drivers/scsi/esp_scsi.c
+@@ -1034,7 +1034,7 @@ static int esp_check_spur_intr(struct esp *esp)
+ static void esp_schedule_reset(struct esp *esp)
+ {
+ 	esp_log_reset("esp_schedule_reset() from %ps\n",
+-		      __builtin_return_address(0));
++		      _RET_IP_);
+ 	esp->flags |= ESP_FLAG_RESETTING;
+ 	esp_event(esp, ESP_EVENT_RESET);
+ }
+diff --git a/drivers/usb/gadget/function/u_serial.c b/drivers/usb/gadget/function/u_serial.c
+index 97f07757d..105bd4e1a 100644
+--- a/drivers/usb/gadget/function/u_serial.c
++++ b/drivers/usb/gadget/function/u_serial.c
+@@ -756,7 +756,7 @@ static int gs_put_char(struct tty_struct *tty, unsigned char ch)
+ 	int		status;
+ 
+ 	pr_vdebug("gs_put_char: (%d,%p) char=0x%x, called from %ps\n",
+-		port->port_num, tty, ch, __builtin_return_address(0));
++		port->port_num, tty, ch, _RET_IP_);
+ 
+ 	spin_lock_irqsave(&port->port_lock, flags);
+ 	status = kfifo_put(&port->port_write_buf, ch);
+diff --git a/drivers/usb/musb/musb_core.c b/drivers/usb/musb/musb_core.c
+index ecbd3784b..385d044f4 100644
+--- a/drivers/usb/musb/musb_core.c
++++ b/drivers/usb/musb/musb_core.c
+@@ -251,13 +251,13 @@ static u8 musb_default_readb(void __iomem *addr, u32 offset)
+ {
+ 	u8 data =  __raw_readb(addr + offset);
+ 
+-	trace_musb_readb(__builtin_return_address(0), addr, offset, data);
++	trace_musb_readb(_RET_IP_, addr, offset, data);
+ 	return data;
+ }
+ 
+ static void musb_default_writeb(void __iomem *addr, u32 offset, u8 data)
+ {
+-	trace_musb_writeb(__builtin_return_address(0), addr, offset, data);
++	trace_musb_writeb(_RET_IP_, addr, offset, data);
+ 	__raw_writeb(data, addr + offset);
+ }
+ 
+@@ -265,13 +265,13 @@ static u16 musb_default_readw(void __iomem *addr, u32 offset)
+ {
+ 	u16 data = __raw_readw(addr + offset);
+ 
+-	trace_musb_readw(__builtin_return_address(0), addr, offset, data);
++	trace_musb_readw(_RET_IP_, addr, offset, data);
+ 	return data;
+ }
+ 
+ static void musb_default_writew(void __iomem *addr, u32 offset, u16 data)
+ {
+-	trace_musb_writew(__builtin_return_address(0), addr, offset, data);
++	trace_musb_writew(_RET_IP_, addr, offset, data);
+ 	__raw_writew(data, addr + offset);
+ }
+ 
+@@ -419,14 +419,14 @@ u32 musb_readl(void __iomem *addr, u32 offset)
+ {
+ 	u32 data = __raw_readl(addr + offset);
+ 
+-	trace_musb_readl(__builtin_return_address(0), addr, offset, data);
++	trace_musb_readl(_RET_IP_, addr, offset, data);
+ 	return data;
+ }
+ EXPORT_SYMBOL_GPL(musb_readl);
+ 
+ void musb_writel(void __iomem *addr, u32 offset, u32 data)
+ {
+-	trace_musb_writel(__builtin_return_address(0), addr, offset, data);
++	trace_musb_writel(_RET_IP_, addr, offset, data);
+ 	__raw_writel(data, addr + offset);
+ }
+ EXPORT_SYMBOL_GPL(musb_writel);
+diff --git a/fs/afs/rxrpc.c b/fs/afs/rxrpc.c
+index ed1644e76..2fb9ac566 100644
+--- a/fs/afs/rxrpc.c
++++ b/fs/afs/rxrpc.c
+@@ -155,7 +155,7 @@ static struct afs_call *afs_alloc_call(struct afs_net *net,
+ 
+ 	o = atomic_inc_return(&net->nr_outstanding_calls);
+ 	trace_afs_call(call->debug_id, afs_call_trace_alloc, 1, o,
+-		       __builtin_return_address(0));
++		       _RET_IP_);
+ 	return call;
+ }
+ 
+@@ -172,7 +172,7 @@ void afs_put_call(struct afs_call *call)
+ 	zero = __refcount_dec_and_test(&call->ref, &r);
+ 	o = atomic_read(&net->nr_outstanding_calls);
+ 	trace_afs_call(debug_id, afs_call_trace_put, r - 1, o,
+-		       __builtin_return_address(0));
++		       _RET_IP_);
+ 
+ 	if (zero) {
+ 		ASSERT(!work_pending(&call->async_work));
+@@ -191,7 +191,7 @@ void afs_put_call(struct afs_call *call)
+ 		kfree(call->request);
+ 
+ 		trace_afs_call(call->debug_id, afs_call_trace_free, 0, o,
+-			       __builtin_return_address(0));
++			       _RET_IP_);
+ 		kfree(call);
+ 
+ 		o = atomic_dec_return(&net->nr_outstanding_calls);
+@@ -209,7 +209,7 @@ static struct afs_call *afs_get_call(struct afs_call *call,
+ 
+ 	trace_afs_call(call->debug_id, why, r + 1,
+ 		       atomic_read(&call->net->nr_outstanding_calls),
+-		       __builtin_return_address(0));
++		       _RET_IP_);
+ 	return call;
+ }
+ 
+@@ -679,7 +679,7 @@ static void afs_wake_up_async_call(struct sock *sk, struct rxrpc_call *rxcall,
+ 	if (__refcount_inc_not_zero(&call->ref, &r)) {
+ 		trace_afs_call(call->debug_id, afs_call_trace_wake, r + 1,
+ 			       atomic_read(&call->net->nr_outstanding_calls),
+-			       __builtin_return_address(0));
++			       _RET_IP_);
+ 
+ 		if (!queue_work(afs_async_calls, &call->async_work))
+ 			afs_put_call(call);
+diff --git a/fs/f2fs/f2fs.h b/fs/f2fs/f2fs.h
+index cfb8e274c..2744ee793 100644
+--- a/fs/f2fs/f2fs.h
++++ b/fs/f2fs/f2fs.h
+@@ -1798,7 +1798,7 @@ struct f2fs_sb_info {
+ 
+ #ifdef CONFIG_F2FS_FAULT_INJECTION
+ #define time_to_inject(sbi, type) __time_to_inject(sbi, type, __func__,	\
+-									__builtin_return_address(0))
++									_RET_IP_)
+ static inline bool __time_to_inject(struct f2fs_sb_info *sbi, int type,
+ 				const char *func, const char *parent_func)
+ {
+diff --git a/fs/hfs/bfind.c b/fs/hfs/bfind.c
+index ef9498a6e..597a12c0e 100644
+--- a/fs/hfs/bfind.c
++++ b/fs/hfs/bfind.c
+@@ -24,7 +24,7 @@ int hfs_find_init(struct hfs_btree *tree, struct hfs_find_data *fd)
+ 	fd->search_key = ptr;
+ 	fd->key = ptr + tree->max_key_len + 2;
+ 	hfs_dbg(BNODE_REFS, "find_init: %d (%p)\n",
+-		tree->cnid, __builtin_return_address(0));
++		tree->cnid, _RET_IP_);
+ 	switch (tree->cnid) {
+ 	case HFS_CAT_CNID:
+ 		mutex_lock_nested(&tree->tree_lock, CATALOG_BTREE_MUTEX);
+@@ -46,7 +46,7 @@ void hfs_find_exit(struct hfs_find_data *fd)
+ 	hfs_bnode_put(fd->bnode);
+ 	kfree(fd->search_key);
+ 	hfs_dbg(BNODE_REFS, "find_exit: %d (%p)\n",
+-		fd->tree->cnid, __builtin_return_address(0));
++		fd->tree->cnid, _RET_IP_);
+ 	mutex_unlock(&fd->tree->tree_lock);
+ 	fd->tree = NULL;
+ }
+diff --git a/fs/hfsplus/bfind.c b/fs/hfsplus/bfind.c
+index ca2ba8c9f..6e29c75db 100644
+--- a/fs/hfsplus/bfind.c
++++ b/fs/hfsplus/bfind.c
+@@ -24,7 +24,7 @@ int hfs_find_init(struct hfs_btree *tree, struct hfs_find_data *fd)
+ 	fd->search_key = ptr;
+ 	fd->key = ptr + tree->max_key_len + 2;
+ 	hfs_dbg(BNODE_REFS, "find_init: %d (%p)\n",
+-		tree->cnid, __builtin_return_address(0));
++		tree->cnid, _RET_IP_);
+ 	switch (tree->cnid) {
+ 	case HFSPLUS_CAT_CNID:
+ 		mutex_lock_nested(&tree->tree_lock, CATALOG_BTREE_MUTEX);
+@@ -46,7 +46,7 @@ void hfs_find_exit(struct hfs_find_data *fd)
+ 	hfs_bnode_put(fd->bnode);
+ 	kfree(fd->search_key);
+ 	hfs_dbg(BNODE_REFS, "find_exit: %d (%p)\n",
+-		fd->tree->cnid, __builtin_return_address(0));
++		fd->tree->cnid, _RET_IP_);
+ 	mutex_unlock(&fd->tree->tree_lock);
+ 	fd->tree = NULL;
+ }
+diff --git a/fs/jfs/super.c b/fs/jfs/super.c
+index d2f82cb7d..760bb807b 100644
+--- a/fs/jfs/super.c
++++ b/fs/jfs/super.c
+@@ -91,7 +91,7 @@ void jfs_error(struct super_block *sb, const char *fmt, ...)
+ 	vaf.va = &args;
+ 
+ 	pr_err("ERROR: (device %s): %ps: %pV\n",
+-	       sb->s_id, __builtin_return_address(0), &vaf);
++	       sb->s_id, _RET_IP_, &vaf);
+ 
+ 	va_end(args);
+ 
+diff --git a/fs/ocfs2/cluster/heartbeat.c b/fs/ocfs2/cluster/heartbeat.c
+index 60b97c92e..9a7ca4b1f 100644
+--- a/fs/ocfs2/cluster/heartbeat.c
++++ b/fs/ocfs2/cluster/heartbeat.c
+@@ -2425,7 +2425,7 @@ int o2hb_register_callback(const char *region_uuid,
+ 	ret = 0;
+ out:
+ 	mlog(ML_CLUSTER, "returning %d on behalf of %p for funcs %p\n",
+-	     ret, __builtin_return_address(0), hc);
++	     ret, _RET_IP_, hc);
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(o2hb_register_callback);
+@@ -2436,7 +2436,7 @@ void o2hb_unregister_callback(const char *region_uuid,
+ 	BUG_ON(hc->hc_magic != O2HB_CB_MAGIC);
+ 
+ 	mlog(ML_CLUSTER, "on behalf of %p for funcs %p\n",
+-	     __builtin_return_address(0), hc);
++	     _RET_IP_, hc);
+ 
+ 	/* XXX Can this happen _with_ a region reference? */
+ 	if (list_empty(&hc->hc_item))
+diff --git a/fs/ocfs2/dlm/dlmmaster.c b/fs/ocfs2/dlm/dlmmaster.c
+index d610da8e2..7ac155df9 100644
+--- a/fs/ocfs2/dlm/dlmmaster.c
++++ b/fs/ocfs2/dlm/dlmmaster.c
+@@ -604,7 +604,7 @@ void dlm_lockres_set_refmap_bit(struct dlm_ctxt *dlm,
+ 	assert_spin_locked(&res->spinlock);
+ 
+ 	mlog(0, "res %.*s, set node %u, %ps()\n", res->lockname.len,
+-	     res->lockname.name, bit, __builtin_return_address(0));
++	     res->lockname.name, bit, _RET_IP_);
+ 
+ 	set_bit(bit, res->refmap);
+ }
+@@ -615,7 +615,7 @@ void dlm_lockres_clear_refmap_bit(struct dlm_ctxt *dlm,
+ 	assert_spin_locked(&res->spinlock);
+ 
+ 	mlog(0, "res %.*s, clr node %u, %ps()\n", res->lockname.len,
+-	     res->lockname.name, bit, __builtin_return_address(0));
++	     res->lockname.name, bit, _RET_IP_);
+ 
+ 	clear_bit(bit, res->refmap);
+ }
+@@ -627,7 +627,7 @@ static void __dlm_lockres_grab_inflight_ref(struct dlm_ctxt *dlm,
+ 
+ 	mlog(0, "%s: res %.*s, inflight++: now %u, %ps()\n", dlm->name,
+ 	     res->lockname.len, res->lockname.name, res->inflight_locks,
+-	     __builtin_return_address(0));
++	     _RET_IP_);
+ }
+ 
+ void dlm_lockres_grab_inflight_ref(struct dlm_ctxt *dlm,
+@@ -648,7 +648,7 @@ void dlm_lockres_drop_inflight_ref(struct dlm_ctxt *dlm,
+ 
+ 	mlog(0, "%s: res %.*s, inflight--: now %u, %ps()\n", dlm->name,
+ 	     res->lockname.len, res->lockname.name, res->inflight_locks,
+-	     __builtin_return_address(0));
++	     _RET_IP_);
+ 
+ 	wake_up(&res->wq);
+ }
+diff --git a/fs/ubifs/misc.c b/fs/ubifs/misc.c
+index cd23de0f2..4372aa344 100644
+--- a/fs/ubifs/misc.c
++++ b/fs/ubifs/misc.c
+@@ -32,7 +32,7 @@ void ubifs_err(const struct ubifs_info *c, const char *fmt, ...)
+ 
+ 	pr_err("UBIFS error (ubi%d:%d pid %d): %ps: %pV\n",
+ 	       c->vi.ubi_num, c->vi.vol_id, current->pid,
+-	       __builtin_return_address(0),
++	       _RET_IP_,
+ 	       &vaf);
+ 
+ 	va_end(args);
+@@ -51,7 +51,7 @@ void ubifs_warn(const struct ubifs_info *c, const char *fmt, ...)
+ 
+ 	pr_warn("UBIFS warning (ubi%d:%d pid %d): %ps: %pV\n",
+ 		c->vi.ubi_num, c->vi.vol_id, current->pid,
+-		__builtin_return_address(0),
++		_RET_IP_,
+ 		&vaf);
+ 
+ 	va_end(args);
+diff --git a/fs/xfs/xfs_buf.h b/fs/xfs/xfs_buf.h
+index 549c60942..4c4ea4054 100644
+--- a/fs/xfs/xfs_buf.h
++++ b/fs/xfs/xfs_buf.h
+@@ -248,7 +248,7 @@ xfs_buf_read(
+ 	DEFINE_SINGLE_BUF_MAP(map, blkno, numblks);
+ 
+ 	return xfs_buf_read_map(target, &map, 1, flags, bpp, ops,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ }
+ 
+ static inline void
+diff --git a/fs/xfs/xfs_linux.h b/fs/xfs/xfs_linux.h
+index 74dcb0506..3895d8652 100644
+--- a/fs/xfs/xfs_linux.h
++++ b/fs/xfs/xfs_linux.h
+@@ -125,14 +125,18 @@ typedef __u32			xfs_nlink_t;
+ #define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
+ #define EFSBADCRC	EBADMSG		/* Bad CRC detected */
+ 
+-#define __return_address __builtin_return_address(0)
++#define __return_address _RET_IP_
+ 
+ /*
+  * Return the address of a label.  Use barrier() so that the optimizer
+  * won't reorder code to refactor the error jumpouts into a single
+  * return, which throws off the reported address.
+  */
++#ifndef CONFIG_NO_IP
+ #define __this_address	({ __label__ __here; __here: barrier(); &&__here; })
++#else
++#define __this_address (0)
++#endif
+ 
+ #define XFS_PROJID_DEFAULT	0
+ 
+diff --git a/include/linux/ftrace.h b/include/linux/ftrace.h
+index b23bdd414..e839360cf 100644
+--- a/include/linux/ftrace.h
++++ b/include/linux/ftrace.h
+@@ -946,7 +946,7 @@ static inline void __ftrace_enabled_restore(int enabled)
+ 
+ /* All archs should have this, but we define it for consistency */
+ #ifndef ftrace_return_address0
+-# define ftrace_return_address0 __builtin_return_address(0)
++# define ftrace_return_address0 _RET_IP_
+ #endif
+ 
+ /* Archs may use other ways for ADDR1 and beyond */
+diff --git a/include/linux/instruction_pointer.h b/include/linux/instruction_pointer.h
+index cda1f706e..fbb04af59 100644
+--- a/include/linux/instruction_pointer.h
++++ b/include/linux/instruction_pointer.h
+@@ -2,7 +2,12 @@
+ #ifndef _LINUX_INSTRUCTION_POINTER_H
+ #define _LINUX_INSTRUCTION_POINTER_H
+ 
++#ifndef CONFIG_NO_IP
+ #define _RET_IP_		(unsigned long)__builtin_return_address(0)
+ #define _THIS_IP_  ({ __label__ __here; __here: (unsigned long)&&__here; })
++#else
++#define _RET_IP_	(0)
++#define _THIS_IP_	(0)
++#endif
+ 
+ #endif /* _LINUX_INSTRUCTION_POINTER_H */
+diff --git a/kernel/bpf/syscall.c b/kernel/bpf/syscall.c
+index f715ec5d5..a9caa2c1b 100644
+--- a/kernel/bpf/syscall.c
++++ b/kernel/bpf/syscall.c
+@@ -304,7 +304,7 @@ static void *__bpf_map_area_alloc(u64 size, int numa_node, bool mmapable)
+ 
+ 	return __vmalloc_node_range(size, align, VMALLOC_START, VMALLOC_END,
+ 			gfp | GFP_KERNEL | __GFP_RETRY_MAYFAIL, PAGE_KERNEL,
+-			flags, numa_node, __builtin_return_address(0));
++			flags, numa_node, _RET_IP_);
+ }
+ 
+ void *bpf_map_area_alloc(u64 size, int numa_node)
+diff --git a/kernel/cred.c b/kernel/cred.c
+index 811ad654a..71a2939c3 100644
+--- a/kernel/cred.c
++++ b/kernel/cred.c
+@@ -142,7 +142,7 @@ void __put_cred(struct cred *cred)
+ #ifdef CONFIG_DEBUG_CREDENTIALS
+ 	BUG_ON(read_cred_subscribers(cred) != 0);
+ 	cred->magic = CRED_MAGIC_DEAD;
+-	cred->put_addr = __builtin_return_address(0);
++	cred->put_addr = _RET_IP_;
+ #endif
+ 	BUG_ON(cred == current->cred);
+ 	BUG_ON(cred == current->real_cred);
+diff --git a/kernel/dma/direct.c b/kernel/dma/direct.c
+index 5595d1d5c..e71b337f1 100644
+--- a/kernel/dma/direct.c
++++ b/kernel/dma/direct.c
+@@ -289,7 +289,7 @@ void *dma_direct_alloc(struct device *dev, size_t size,
+ 
+ 		/* create a coherent mapping */
+ 		ret = dma_common_contiguous_remap(page, size, prot,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ 		if (!ret)
+ 			goto out_free_pages;
+ 	} else {
+diff --git a/kernel/dma/pool.c b/kernel/dma/pool.c
+index 1acec2e22..a2d742390 100644
+--- a/kernel/dma/pool.c
++++ b/kernel/dma/pool.c
+@@ -103,7 +103,7 @@ static int atomic_pool_expand(struct gen_pool *pool, size_t pool_size,
+ #ifdef CONFIG_DMA_DIRECT_REMAP
+ 	addr = dma_common_contiguous_remap(page, pool_size,
+ 					   pgprot_dmacoherent(PAGE_KERNEL),
+-					   __builtin_return_address(0));
++					   _RET_IP_);
+ 	if (!addr)
+ 		goto free_page;
+ #else
+diff --git a/kernel/fork.c b/kernel/fork.c
+index 8103ffd21..038753f0e 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -314,7 +314,7 @@ static int alloc_thread_stack_node(struct task_struct *tsk, int node)
+ 				     VMALLOC_START, VMALLOC_END,
+ 				     THREADINFO_GFP & ~__GFP_ACCOUNT,
+ 				     PAGE_KERNEL,
+-				     0, node, __builtin_return_address(0));
++				     0, node, _RET_IP_);
+ 	if (!stack)
+ 		return -ENOMEM;
+ 
+diff --git a/kernel/module/main.c b/kernel/module/main.c
+index a04e94c9f..b7379f09e 100644
+--- a/kernel/module/main.c
++++ b/kernel/module/main.c
+@@ -1621,7 +1621,7 @@ void * __weak module_alloc(unsigned long size)
+ {
+ 	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+ 			GFP_KERNEL, PAGE_KERNEL_EXEC, VM_FLUSH_RESET_PERMS,
+-			NUMA_NO_NODE, __builtin_return_address(0));
++			NUMA_NO_NODE, _RET_IP_);
+ }
+ 
+ bool __weak module_init_section(const char *name)
+diff --git a/kernel/panic.c b/kernel/panic.c
+index 886d2ebd0..c990ada85 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -694,14 +694,13 @@ void warn_slowpath_fmt(const char *file, int line, unsigned taint,
+ 	pr_warn(CUT_HERE);
+ 
+ 	if (!fmt) {
+-		__warn(file, line, __builtin_return_address(0), taint,
+-		       NULL, NULL);
++		__warn(file, line, _RET_IP_, taint, NULL, NULL);
+ 		return;
+ 	}
+ 
+ 	args.fmt = fmt;
+ 	va_start(args.args, fmt);
+-	__warn(file, line, __builtin_return_address(0), taint, NULL, &args);
++	__warn(file, line, _RET_IP_, taint, NULL, &args);
+ 	va_end(args.args);
+ 	warn_rcu_exit(rcu);
+ }
+@@ -757,7 +756,7 @@ __visible noinstr void __stack_chk_fail(void)
+ {
+ 	instrumentation_begin();
+ 	panic("stack-protector: Kernel stack is corrupted in: %pB",
+-		__builtin_return_address(0));
++		_RET_IP_);
+ 	instrumentation_end();
+ }
+ EXPORT_SYMBOL(__stack_chk_fail);
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 900057600..ae5b19cb5 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5924,7 +5924,7 @@ static inline void schedule_debug(struct task_struct *prev, bool preempt)
+ 	rcu_sleep_check();
+ 	SCHED_WARN_ON(ct_state() == CONTEXT_USER);
+ 
+-	profile_hit(SCHED_PROFILING, __builtin_return_address(0));
++	profile_hit(SCHED_PROFILING, _RET_IP_);
+ 
+ 	schedstat_inc(this_rq()->sched_count);
+ }
+diff --git a/kernel/scs.c b/kernel/scs.c
+index d7809affe..57292f5da 100644
+--- a/kernel/scs.c
++++ b/kernel/scs.c
+@@ -45,7 +45,7 @@ static void *__scs_alloc(int node)
+ 
+ 	s = __vmalloc_node_range(SCS_SIZE, 1, VMALLOC_START, VMALLOC_END,
+ 				    GFP_SCS, PAGE_KERNEL, 0, node,
+-				    __builtin_return_address(0));
++				    _RET_IP_);
+ 
+ out:
+ 	return kasan_reset_tag(s);
+diff --git a/lib/smp_processor_id.c b/lib/smp_processor_id.c
+index a2bb7738c..cd68af76a 100644
+--- a/lib/smp_processor_id.c
++++ b/lib/smp_processor_id.c
+@@ -45,7 +45,7 @@ unsigned int check_preemption_disabled(const char *what1, const char *what2)
+ 	printk(KERN_ERR "BUG: using %s%s() in preemptible [%08x] code: %s/%d\n",
+ 		what1, what2, preempt_count() - 1, current->comm, current->pid);
+ 
+-	printk("caller is %pS\n", __builtin_return_address(0));
++	printk("caller is %pS\n", _RET_IP_);
+ 	dump_stack();
+ 
+ out_enable:
+diff --git a/lib/test_kprobes.c b/lib/test_kprobes.c
+index 0648f7154..bb74ad6af 100644
+--- a/lib/test_kprobes.c
++++ b/lib/test_kprobes.c
+@@ -76,14 +76,14 @@ static noinline u32 kprobe_target2(u32 value)
+ static noinline unsigned long kprobe_stacktrace_internal_target(void)
+ {
+ 	if (!target_return_address[0])
+-		target_return_address[0] = (unsigned long)__builtin_return_address(0);
++		target_return_address[0] = (unsigned long)_RET_IP_;
+ 	return target_return_address[0];
+ }
+ 
+ static noinline unsigned long kprobe_stacktrace_target(void)
+ {
+ 	if (!target_return_address[1])
+-		target_return_address[1] = (unsigned long)__builtin_return_address(0);
++		target_return_address[1] = (unsigned long)_RET_IP_;
+ 
+ 	if (internal_target)
+ 		internal_target();
+@@ -97,7 +97,7 @@ static noinline unsigned long kprobe_stacktrace_driver(void)
+ 		stacktrace_target();
+ 
+ 	/* This is for preventing inlining the function */
+-	return (unsigned long)__builtin_return_address(0);
++	return (unsigned long)_RET_IP_;
+ }
+ 
+ static int kp_pre_handler2(struct kprobe *p, struct pt_regs *regs)
+@@ -287,7 +287,7 @@ static struct kretprobe rp3 = {
+ 
+ static void test_stacktrace_on_kretprobe(struct kunit *test)
+ {
+-	unsigned long myretaddr = (unsigned long)__builtin_return_address(0);
++	unsigned long myretaddr = (unsigned long)_RET_IP_;
+ 
+ 	current_test = test;
+ 	rp3.kp.addr = NULL;
+@@ -348,7 +348,7 @@ static struct kretprobe rp4 = {
+ 
+ static void test_stacktrace_on_nested_kretprobe(struct kunit *test)
+ {
+-	unsigned long myretaddr = (unsigned long)__builtin_return_address(0);
++	unsigned long myretaddr = (unsigned long)_RET_IP_;
+ 	struct kretprobe *rps[2] = {&rp3, &rp4};
+ 
+ 	current_test = test;
+diff --git a/lib/test_vmalloc.c b/lib/test_vmalloc.c
+index 3718d9886..0ec275c49 100644
+--- a/lib/test_vmalloc.c
++++ b/lib/test_vmalloc.c
+@@ -97,7 +97,7 @@ static int random_size_align_alloc_test(void)
+ 		size = ((rnd % 10) + 1) * PAGE_SIZE;
+ 
+ 		ptr = __vmalloc_node(size, align, GFP_KERNEL | __GFP_ZERO, 0,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ 		if (!ptr)
+ 			return -1;
+ 
+@@ -120,7 +120,7 @@ static int align_shift_alloc_test(void)
+ 		align = ((unsigned long) 1) << i;
+ 
+ 		ptr = __vmalloc_node(PAGE_SIZE, align, GFP_KERNEL|__GFP_ZERO, 0,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ 		if (!ptr)
+ 			return -1;
+ 
+@@ -138,7 +138,7 @@ static int fix_align_alloc_test(void)
+ 	for (i = 0; i < test_loop_count; i++) {
+ 		ptr = __vmalloc_node(5 * PAGE_SIZE, THREAD_ALIGN << 1,
+ 				GFP_KERNEL | __GFP_ZERO, 0,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ 		if (!ptr)
+ 			return -1;
+ 
+diff --git a/mm/ioremap.c b/mm/ioremap.c
+index 865242628..ebe8b07fd 100644
+--- a/mm/ioremap.c
++++ b/mm/ioremap.c
+@@ -32,7 +32,7 @@ void __iomem *ioremap_prot(phys_addr_t phys_addr, size_t size,
+ 		return NULL;
+ 
+ 	area = get_vm_area_caller(size, VM_IOREMAP,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ 	if (!area)
+ 		return NULL;
+ 	vaddr = (unsigned long)area->addr;
+diff --git a/mm/kasan/shadow.c b/mm/kasan/shadow.c
+index 3e62728ae..4cda3582e 100644
+--- a/mm/kasan/shadow.c
++++ b/mm/kasan/shadow.c
+@@ -262,7 +262,7 @@ static int __meminit kasan_mem_notifier(struct notifier_block *nb,
+ 					shadow_end, GFP_KERNEL,
+ 					PAGE_KERNEL, VM_NO_GUARD,
+ 					pfn_to_nid(mem_data->start_pfn),
+-					__builtin_return_address(0));
++					_RET_IP_);
+ 		if (!ret)
+ 			return NOTIFY_BAD;
+ 
+@@ -621,7 +621,7 @@ int kasan_alloc_module_shadow(void *addr, size_t size, gfp_t gfp_mask)
+ 			shadow_start + shadow_size,
+ 			GFP_KERNEL,
+ 			PAGE_KERNEL, VM_NO_GUARD, NUMA_NO_NODE,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ 
+ 	if (ret) {
+ 		struct vm_struct *vm = find_vm_area(addr);
+diff --git a/mm/kmsan/instrumentation.c b/mm/kmsan/instrumentation.c
+index cc3907a9c..b2be7bcab 100644
+--- a/mm/kmsan/instrumentation.c
++++ b/mm/kmsan/instrumentation.c
+@@ -269,7 +269,7 @@ void __msan_poison_alloca(void *address, uintptr_t size, char *descr)
+ 	ua_flags = user_access_save();
+ 	entries[0] = KMSAN_ALLOCA_MAGIC_ORIGIN;
+ 	entries[1] = (u64)descr;
+-	entries[2] = (u64)__builtin_return_address(0);
++	entries[2] = (u64)_RET_IP_;
+ 	/*
+ 	 * With frame pointers enabled, it is possible to quickly fetch the
+ 	 * second frame of the caller stack without calling the unwinder.
+diff --git a/mm/util.c b/mm/util.c
+index 406634f26..908885577 100644
+--- a/mm/util.c
++++ b/mm/util.c
+@@ -628,7 +628,7 @@ void *kvmalloc_node(size_t size, gfp_t flags, int node)
+ 	 */
+ 	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+ 			flags, PAGE_KERNEL, VM_ALLOW_HUGE_VMAP,
+-			node, __builtin_return_address(0));
++			node, _RET_IP_);
+ }
+ EXPORT_SYMBOL(kvmalloc_node);
+ 
+diff --git a/mm/vmalloc.c b/mm/vmalloc.c
+index d78dfb071..37c38af09 100644
+--- a/mm/vmalloc.c
++++ b/mm/vmalloc.c
+@@ -2595,7 +2595,7 @@ struct vm_struct *get_vm_area(unsigned long size, unsigned long flags)
+ 	return __get_vm_area_node(size, 1, PAGE_SHIFT, flags,
+ 				  VMALLOC_START, VMALLOC_END,
+ 				  NUMA_NO_NODE, GFP_KERNEL,
+-				  __builtin_return_address(0));
++				  _RET_IP_);
+ }
+ 
+ struct vm_struct *get_vm_area_caller(unsigned long size, unsigned long flags,
+@@ -2870,7 +2870,7 @@ void *vmap(struct page **pages, unsigned int count,
+ 		return NULL;
+ 
+ 	size = (unsigned long)count << PAGE_SHIFT;
+-	area = get_vm_area_caller(size, flags, __builtin_return_address(0));
++	area = get_vm_area_caller(size, flags, _RET_IP_);
+ 	if (!area)
+ 		return NULL;
+ 
+@@ -2921,7 +2921,7 @@ void *vmap_pfn(unsigned long *pfns, unsigned int count, pgprot_t prot)
+ 	struct vm_struct *area;
+ 
+ 	area = get_vm_area_caller(count * PAGE_SIZE, VM_IOREMAP,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ 	if (!area)
+ 		return NULL;
+ 	if (apply_to_page_range(&init_mm, (unsigned long)area->addr,
+@@ -3347,7 +3347,7 @@ EXPORT_SYMBOL_GPL(__vmalloc_node);
+ void *__vmalloc(unsigned long size, gfp_t gfp_mask)
+ {
+ 	return __vmalloc_node(size, 1, gfp_mask, NUMA_NO_NODE,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ }
+ EXPORT_SYMBOL(__vmalloc);
+ 
+@@ -3366,7 +3366,7 @@ EXPORT_SYMBOL(__vmalloc);
+ void *vmalloc(unsigned long size)
+ {
+ 	return __vmalloc_node(size, 1, GFP_KERNEL, NUMA_NO_NODE,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ }
+ EXPORT_SYMBOL(vmalloc);
+ 
+@@ -3386,7 +3386,7 @@ void *vmalloc_huge(unsigned long size, gfp_t gfp_mask)
+ {
+ 	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+ 				    gfp_mask, PAGE_KERNEL, VM_ALLOW_HUGE_VMAP,
+-				    NUMA_NO_NODE, __builtin_return_address(0));
++				    NUMA_NO_NODE, _RET_IP_);
+ }
+ EXPORT_SYMBOL_GPL(vmalloc_huge);
+ 
+@@ -3406,7 +3406,7 @@ EXPORT_SYMBOL_GPL(vmalloc_huge);
+ void *vzalloc(unsigned long size)
+ {
+ 	return __vmalloc_node(size, 1, GFP_KERNEL | __GFP_ZERO, NUMA_NO_NODE,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ }
+ EXPORT_SYMBOL(vzalloc);
+ 
+@@ -3424,7 +3424,7 @@ void *vmalloc_user(unsigned long size)
+ 	return __vmalloc_node_range(size, SHMLBA,  VMALLOC_START, VMALLOC_END,
+ 				    GFP_KERNEL | __GFP_ZERO, PAGE_KERNEL,
+ 				    VM_USERMAP, NUMA_NO_NODE,
+-				    __builtin_return_address(0));
++				    _RET_IP_);
+ }
+ EXPORT_SYMBOL(vmalloc_user);
+ 
+@@ -3444,7 +3444,7 @@ EXPORT_SYMBOL(vmalloc_user);
+ void *vmalloc_node(unsigned long size, int node)
+ {
+ 	return __vmalloc_node(size, 1, GFP_KERNEL, node,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ }
+ EXPORT_SYMBOL(vmalloc_node);
+ 
+@@ -3462,7 +3462,7 @@ EXPORT_SYMBOL(vmalloc_node);
+ void *vzalloc_node(unsigned long size, int node)
+ {
+ 	return __vmalloc_node(size, 1, GFP_KERNEL | __GFP_ZERO, node,
+-				__builtin_return_address(0));
++				_RET_IP_);
+ }
+ EXPORT_SYMBOL(vzalloc_node);
+ 
+@@ -3490,7 +3490,7 @@ EXPORT_SYMBOL(vzalloc_node);
+ void *vmalloc_32(unsigned long size)
+ {
+ 	return __vmalloc_node(size, 1, GFP_VMALLOC32, NUMA_NO_NODE,
+-			__builtin_return_address(0));
++			_RET_IP_);
+ }
+ EXPORT_SYMBOL(vmalloc_32);
+ 
+@@ -3508,7 +3508,7 @@ void *vmalloc_32_user(unsigned long size)
+ 	return __vmalloc_node_range(size, SHMLBA,  VMALLOC_START, VMALLOC_END,
+ 				    GFP_VMALLOC32 | __GFP_ZERO, PAGE_KERNEL,
+ 				    VM_USERMAP, NUMA_NO_NODE,
+-				    __builtin_return_address(0));
++				    _RET_IP_);
+ }
+ EXPORT_SYMBOL(vmalloc_32_user);
+ 
+diff --git a/net/core/skbuff.c b/net/core/skbuff.c
+index 0c0fef73b..ba51e1620 100644
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -1049,9 +1049,9 @@ bool __kfree_skb_reason(struct sk_buff *skb, enum skb_drop_reason reason)
+ 				SKB_DROP_REASON_SUBSYS_NUM);
+ 
+ 	if (reason == SKB_CONSUMED)
+-		trace_consume_skb(skb, __builtin_return_address(0));
++		trace_consume_skb(skb, _RET_IP_);
+ 	else
+-		trace_kfree_skb(skb, __builtin_return_address(0), reason);
++		trace_kfree_skb(skb, _RET_IP_, reason);
+ 	return true;
+ }
+ 
+@@ -1247,7 +1247,7 @@ void consume_skb(struct sk_buff *skb)
+ 	if (!skb_unref(skb))
+ 		return;
+ 
+-	trace_consume_skb(skb, __builtin_return_address(0));
++	trace_consume_skb(skb, _RET_IP_);
+ 	__kfree_skb(skb);
+ }
+ EXPORT_SYMBOL(consume_skb);
+@@ -1262,7 +1262,7 @@ EXPORT_SYMBOL(consume_skb);
+  */
+ void __consume_stateless_skb(struct sk_buff *skb)
+ {
+-	trace_consume_skb(skb, __builtin_return_address(0));
++	trace_consume_skb(skb, _RET_IP_);
+ 	skb_release_data(skb, SKB_CONSUMED, false);
+ 	kfree_skbmem(skb);
+ }
+@@ -1318,7 +1318,7 @@ void napi_consume_skb(struct sk_buff *skb, int budget)
+ 		return;
+ 
+ 	/* if reaching here SKB is ready to free */
+-	trace_consume_skb(skb, __builtin_return_address(0));
++	trace_consume_skb(skb, _RET_IP_);
+ 
+ 	/* if SKB is a clone, don't handle this case */
+ 	if (skb->fclone != SKB_FCLONE_UNAVAILABLE) {
+@@ -2394,7 +2394,7 @@ void *skb_put(struct sk_buff *skb, unsigned int len)
+ 	skb->tail += len;
+ 	skb->len  += len;
+ 	if (unlikely(skb->tail > skb->end))
+-		skb_over_panic(skb, len, __builtin_return_address(0));
++		skb_over_panic(skb, len, _RET_IP_);
+ 	return tmp;
+ }
+ EXPORT_SYMBOL(skb_put);
+@@ -2413,7 +2413,7 @@ void *skb_push(struct sk_buff *skb, unsigned int len)
+ 	skb->data -= len;
+ 	skb->len  += len;
+ 	if (unlikely(skb->data < skb->head))
+-		skb_under_panic(skb, len, __builtin_return_address(0));
++		skb_under_panic(skb, len, _RET_IP_);
+ 	return skb->data;
+ }
+ EXPORT_SYMBOL(skb_push);
+diff --git a/net/netfilter/ipvs/ip_vs_conn.c b/net/netfilter/ipvs/ip_vs_conn.c
+index f4c55e65a..a6d4a3264 100644
+--- a/net/netfilter/ipvs/ip_vs_conn.c
++++ b/net/netfilter/ipvs/ip_vs_conn.c
+@@ -181,7 +181,7 @@ static inline int ip_vs_conn_hash(struct ip_vs_conn *cp)
+ 		ret = 1;
+ 	} else {
+ 		pr_err("%s(): request for already hashed, called from %pS\n",
+-		       __func__, __builtin_return_address(0));
++		       __func__, _RET_IP_);
+ 		ret = 0;
+ 	}
+ 
+diff --git a/net/netfilter/ipvs/ip_vs_ctl.c b/net/netfilter/ipvs/ip_vs_ctl.c
+index 4bb0d90ec..3c0d0b0cb 100644
+--- a/net/netfilter/ipvs/ip_vs_ctl.c
++++ b/net/netfilter/ipvs/ip_vs_ctl.c
+@@ -349,7 +349,7 @@ static int ip_vs_svc_hash(struct ip_vs_service *svc)
+ 
+ 	if (svc->flags & IP_VS_SVC_F_HASHED) {
+ 		pr_err("%s(): request for already hashed, called from %pS\n",
+-		       __func__, __builtin_return_address(0));
++		       __func__, _RET_IP_);
+ 		return 0;
+ 	}
+ 
+@@ -383,7 +383,7 @@ static int ip_vs_svc_unhash(struct ip_vs_service *svc)
+ {
+ 	if (!(svc->flags & IP_VS_SVC_F_HASHED)) {
+ 		pr_err("%s(): request for unhash flagged, called from %pS\n",
+-		       __func__, __builtin_return_address(0));
++		       __func__, _RET_IP_);
+ 		return 0;
+ 	}
+ 
+diff --git a/net/smc/smc_core.c b/net/smc/smc_core.c
+index 6b7807540..8b07ca8fe 100644
+--- a/net/smc/smc_core.c
++++ b/net/smc/smc_core.c
+@@ -1718,7 +1718,7 @@ static void smcr_link_down(struct smc_link *lnk)
+ void smcr_link_down_cond(struct smc_link *lnk)
+ {
+ 	if (smc_link_downing(&lnk->state)) {
+-		trace_smcr_link_down(lnk, __builtin_return_address(0));
++		trace_smcr_link_down(lnk, _RET_IP_);
+ 		smcr_link_down(lnk);
+ 	}
+ }
+@@ -1727,7 +1727,7 @@ void smcr_link_down_cond(struct smc_link *lnk)
+ void smcr_link_down_cond_sched(struct smc_link *lnk)
+ {
+ 	if (smc_link_downing(&lnk->state)) {
+-		trace_smcr_link_down(lnk, __builtin_return_address(0));
++		trace_smcr_link_down(lnk, _RET_IP_);
+ 		schedule_work(&lnk->link_down_wrk);
+ 	}
+ }
+diff --git a/net/tipc/crypto.c b/net/tipc/crypto.c
+index 302fd749c..fc5ff3030 100644
+--- a/net/tipc/crypto.c
++++ b/net/tipc/crypto.c
+@@ -1101,7 +1101,7 @@ static inline void tipc_crypto_key_set_state(struct tipc_crypto *c,
+ 
+ 	pr_debug("%s: key changing %s ::%pS\n", c->name,
+ 		 tipc_key_change_dump(old, c->key, buf),
+-		 __builtin_return_address(0));
++		 _RET_IP_);
+ }
+ 
+ /**
+diff --git a/samples/bpf/tracex2.bpf.c b/samples/bpf/tracex2.bpf.c
+index 0a5c75b36..df3639ebc 100644
+--- a/samples/bpf/tracex2.bpf.c
++++ b/samples/bpf/tracex2.bpf.c
+@@ -28,7 +28,7 @@ int bpf_prog2(struct pt_regs *ctx)
+ 	long *value;
+ 
+ 	/* read ip of kfree_skb_reason caller.
+-	 * non-portable version of __builtin_return_address(0)
++	 * non-portable version of _RET_IP_
+ 	 */
+ 	BPF_KPROBE_READ_RET_IP(loc, ctx);
+ 
+diff --git a/sound/core/device.c b/sound/core/device.c
+index b57d80a17..3c6e0b6c3 100644
+--- a/sound/core/device.c
++++ b/sound/core/device.c
+@@ -114,7 +114,7 @@ void snd_device_disconnect(struct snd_card *card, void *device_data)
+ 		__snd_device_disconnect(dev);
+ 	else
+ 		dev_dbg(card->dev, "device disconnect %p (from %pS), not found\n",
+-			device_data, __builtin_return_address(0));
++			device_data, _RET_IP_);
+ }
+ EXPORT_SYMBOL_GPL(snd_device_disconnect);
+ 
+@@ -138,7 +138,7 @@ void snd_device_free(struct snd_card *card, void *device_data)
+ 		__snd_device_free(dev);
+ 	else
+ 		dev_dbg(card->dev, "device free %p (from %pS), not found\n",
+-			device_data, __builtin_return_address(0));
++			device_data, _RET_IP_);
+ }
+ EXPORT_SYMBOL(snd_device_free);
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,75 @@
+From dd91ef3a67b1034191966eccdee8f583a69db9fa Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 12 May 2024 19:22:35 +0200
+Subject: [PATCH] Provide Wasm support in mk_elfconfig
+
+This is some kind of emulation for the modpost parts of Kbuild which
+currently assumes that ELF is used by all targets.
+---
+ scripts/mod/mk_elfconfig.c | 48 +++++++++++++++++++++-----------------
+ 1 file changed, 27 insertions(+), 21 deletions(-)
+
+diff --git a/scripts/mod/mk_elfconfig.c b/scripts/mod/mk_elfconfig.c
+index 680eade89..782522b23 100644
+--- a/scripts/mod/mk_elfconfig.c
++++ b/scripts/mod/mk_elfconfig.c
+@@ -14,29 +14,35 @@ main(int argc, char **argv)
+ 		fprintf(stderr, "Error: input truncated\n");
+ 		return 1;
+ 	}
+-	if (memcmp(ei, ELFMAG, SELFMAG) != 0) {
+-		fprintf(stderr, "Error: not ELF\n");
+-		return 1;
+-	}
+-	switch (ei[EI_CLASS]) {
+-	case ELFCLASS32:
++
++	if (memcmp(ei, "\x00" "asm", 4UL) == 0) {
++		/* Wasm (not ELF) - provide some emulation. */
+ 		printf("#define KERNEL_ELFCLASS ELFCLASS32\n");
+-		break;
+-	case ELFCLASS64:
+-		printf("#define KERNEL_ELFCLASS ELFCLASS64\n");
+-		break;
+-	default:
+-		exit(1);
+-	}
+-	switch (ei[EI_DATA]) {
+-	case ELFDATA2LSB:
+ 		printf("#define KERNEL_ELFDATA ELFDATA2LSB\n");
+-		break;
+-	case ELFDATA2MSB:
+-		printf("#define KERNEL_ELFDATA ELFDATA2MSB\n");
+-		break;
+-	default:
+-		exit(1);
++	} else if (memcmp(ei, ELFMAG, SELFMAG) != 0) {
++		fprintf(stderr, "Error: not ELF, nor Wasm\n");
++		return 1;
++	} else  {
++		switch (ei[EI_CLASS]) {
++		case ELFCLASS32:
++			printf("#define KERNEL_ELFCLASS ELFCLASS32\n");
++			break;
++		case ELFCLASS64:
++			printf("#define KERNEL_ELFCLASS ELFCLASS64\n");
++			break;
++		default:
++			exit(1);
++		}
++		switch (ei[EI_DATA]) {
++		case ELFDATA2LSB:
++			printf("#define KERNEL_ELFDATA ELFDATA2LSB\n");
++			break;
++		case ELFDATA2MSB:
++			printf("#define KERNEL_ELFDATA ELFDATA2MSB\n");
++			break;
++		default:
++			exit(1);
++		}
+ 	}
+ 
+ 	if (sizeof(unsigned long) == 4) {
+-- 
+2.25.1
+

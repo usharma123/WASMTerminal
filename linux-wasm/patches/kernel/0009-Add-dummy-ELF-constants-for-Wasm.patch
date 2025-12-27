@@ -1,0 +1,101 @@
+From 452439e4c22ae6cb0c3f9055a572ba862c78271a Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 12 May 2024 19:26:03 +0200
+Subject: [PATCH] Add dummy ELF constants for Wasm
+
+The kernel needs ELF to build, but Wasm currently only support for the
+.wasm file format. Some dummy ELF constants are added as a workaround.
+---
+ arch/wasm/include/uapi/asm/elf.h | 80 ++++++++++++++++++++++++++++++++
+ 1 file changed, 80 insertions(+)
+ create mode 100644 arch/wasm/include/uapi/asm/elf.h
+
+diff --git a/arch/wasm/include/uapi/asm/elf.h b/arch/wasm/include/uapi/asm/elf.h
+new file mode 100644
+index 000000000..853cd3786
+--- /dev/null
++++ b/arch/wasm/include/uapi/asm/elf.h
+@@ -0,0 +1,80 @@
++/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
++
++#ifndef _UAPI_ASM_WASM_ELF_H
++#define _UAPI_ASM_WASM_ELF_H
++
++#include <asm/ptrace.h>
++
++/* ELF register definitions */
++typedef unsigned long elf_greg_t;
++typedef struct user_regs_struct elf_gregset_t;
++#define ELF_NGREG (sizeof(elf_gregset_t) / sizeof(elf_greg_t))
++
++/* We don't support f without d, or q.  */
++typedef __u64 elf_fpreg_t;
++typedef union __wasm_fp_state elf_fpregset_t;
++#define ELF_NFPREG (sizeof(struct __wasm_d_ext_state) / sizeof(elf_fpreg_t))
++
++//#define ELF_WASM_R_SYM(r_info)		ELF32_R_SYM(r_info)
++//#define ELF_WASM_R_TYPE(r_info)	ELF32_R_TYPE(r_info)
++
++/* Relocation types used by the dynamic linker */
++#define R_WASM_NONE		0
++#define R_WASM_32		1
++#define R_WASM_64		2
++#define R_WASM_RELATIVE	3
++#define R_WASM_COPY		4
++#define R_WASM_JUMP_SLOT	5
++#define R_WASM_TLS_DTPMOD32	6
++#define R_WASM_TLS_DTPMOD64	7
++#define R_WASM_TLS_DTPREL32	8
++#define R_WASM_TLS_DTPREL64	9
++#define R_WASM_TLS_TPREL32	10
++#define R_WASM_TLS_TPREL64	11
++
++/* Relocation types not used by the dynamic linker */
++#define R_WASM_BRANCH		16
++#define R_WASM_JAL		17
++#define R_WASM_CALL		18
++#define R_WASM_CALL_PLT	19
++#define R_WASM_GOT_HI20	20
++#define R_WASM_TLS_GOT_HI20	21
++#define R_WASM_TLS_GD_HI20	22
++#define R_WASM_PCREL_HI20	23
++#define R_WASM_PCREL_LO12_I	24
++#define R_WASM_PCREL_LO12_S	25
++#define R_WASM_HI20		26
++#define R_WASM_LO12_I		27
++#define R_WASM_LO12_S		28
++#define R_WASM_TPREL_HI20	29
++#define R_WASM_TPREL_LO12_I	30
++#define R_WASM_TPREL_LO12_S	31
++#define R_WASM_TPREL_ADD	32
++#define R_WASM_ADD8		33
++#define R_WASM_ADD16		34
++#define R_WASM_ADD32		35
++#define R_WASM_ADD64		36
++#define R_WASM_SUB8		37
++#define R_WASM_SUB16		38
++#define R_WASM_SUB32		39
++#define R_WASM_SUB64		40
++#define R_WASM_GNU_VTINHERIT	41
++#define R_WASM_GNU_VTENTRY	42
++#define R_WASM_ALIGN		43
++#define R_WASM_RVC_BRANCH	44
++#define R_WASM_RVC_JUMP	45
++#define R_WASM_LUI		46
++#define R_WASM_GPREL_I		47
++#define R_WASM_GPREL_S		48
++#define R_WASM_TPREL_I		49
++#define R_WASM_TPREL_S		50
++#define R_WASM_RELAX		51
++#define R_WASM_SUB6		52
++#define R_WASM_SET6		53
++#define R_WASM_SET8		54
++#define R_WASM_SET16		55
++#define R_WASM_SET32		56
++#define R_WASM_32_PCREL	57
++
++
++#endif /* _UAPI_ASM_WASM_ELF_H */
+-- 
+2.25.1
+

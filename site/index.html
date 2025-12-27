@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linux Terminal</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #terminal {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Make xterm fill the container */
+    .xterm {
+      height: 100%;
+      padding: 8px;
+    }
+
+    .xterm-viewport {
+      overflow-y: auto !important;
+    }
+
+    /* Loading overlay */
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #000;
+      color: #0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: 16px;
+      z-index: 1000;
+    }
+
+    #loading.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #0f0;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+
+  <script>
+    let wasm_linux_version = parseInt(new URLSearchParams(document.location.search).get("v") || 1);
+    wasm_linux_version = (wasm_linux_version < 0) ? (+new Date()) : wasm_linux_version;
+    document.write("<link rel=\"stylesheet\" href=\"xterm.css?v=" + wasm_linux_version + "\">");
+    document.write("<script src=\"linux.js?v=" + wasm_linux_version + "\"><\/script>");
+    document.write("<script src=\"xterm.js?v=" + wasm_linux_version + "\"><\/script>");
+    document.write("<script src=\"net-proxy.js?v=" + wasm_linux_version + "\"><\/script>");
+    document.write("<script src=\"fs-persist.js?v=" + wasm_linux_version + "\"><\/script>");
+  </script>
+</head>
+<body>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="loading-text">Loading Linux kernel...</div>
+  </div>
+
+  <div id="terminal"></div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", async () => {
+      const loadingEl = document.getElementById("loading");
+      const loadingText = document.getElementById("loading-text");
+
+      // Calculate terminal size based on viewport
+      const charWidth = 9;  // approximate character width in pixels
+      const charHeight = 17; // approximate character height in pixels
+      const padding = 16; // 8px padding on each side
+
+      const cols = Math.floor((window.innerWidth - padding) / charWidth);
+      const rows = Math.floor((window.innerHeight - padding) / charHeight);
+
+      const term = new Terminal({
+        cols: cols,
+        rows: rows,
+        cursorBlink: true,
+        cursorStyle: 'block',
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        fontSize: 14,
+        theme: {
+          background: '#000000',
+          foreground: '#00ff00',
+          cursor: '#00ff00',
+          cursorAccent: '#000000',
+          selectionBackground: '#00ff0040'
+        }
+      });
+
+      term.open(document.getElementById("terminal"));
+
+      // Handle window resize
+      window.addEventListener('resize', () => {
+        const newCols = Math.floor((window.innerWidth - padding) / charWidth);
+        const newRows = Math.floor((window.innerHeight - padding) / charHeight);
+        term.resize(newCols, newRows);
+      });
+
+      const log = (text) => term.write(("\x1B[2m" + text + "\x1B[0m\n").replaceAll("\n", "\r\n"));
+      const console_write = (data) => term.write(data);
+
+      // Check for SharedArrayBuffer support
+      if (!window.crossOriginIsolated) {
+        loadingEl.classList.add('hidden');
+        log("Error: Cross-origin isolation not enabled.");
+        log("SharedArrayBuffer is required for this terminal.");
+        log("Please ensure the server sends correct COOP/COEP headers.");
+        return;
+      }
+
+      try {
+        loadingText.textContent = "Compiling WebAssembly kernel...";
+        const worker_url = "linux-worker.js?v=" + wasm_linux_version;
+        const vmlinux = await WebAssembly.compileStreaming(fetch("vmlinux.wasm?v=" + wasm_linux_version));
+
+        loadingText.textContent = "Loading initramfs...";
+        const boot_cmdline =
+          "maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0";
+
+        const initrd_request = await fetch("initramfs.cpio.gz?v=" + wasm_linux_version);
+        if (!initrd_request.ok) {
+          throw new Error("Failed to fetch initrd: " + initrd_request.status);
+        }
+        const initrd = await initrd_request.arrayBuffer();
+
+        loadingText.textContent = "Booting Linux...";
+
+        // Hide loading screen and show terminal
+        loadingEl.classList.add('hidden');
+        term.focus();
+
+        const os = await linux(worker_url, vmlinux, boot_cmdline, initrd, log, console_write);
+        term.onData(data => os.key_input(data));
+
+        // Initialize networking proxy (configure URL for your deployment)
+        // For local development: ws://localhost:8080
+        // For production: wss://your-proxy-server.railway.app
+        const WS_PROXY_URL = window.location.hostname === 'localhost'
+          ? 'ws://localhost:8080'
+          : 'wss://wasmlinux-production.up.railway.app';  // Your deployed proxy URL
+
+        if (os.initNetProxy(WS_PROXY_URL)) {
+          log('[Net] WebSocket proxy initialized');
+        }
+
+        // Initialize filesystem persistence (IndexedDB)
+        if (await os.initFsPersist()) {
+          log('[FS] Filesystem persistence initialized');
+        }
+
+      } catch (error) {
+        loadingEl.classList.add('hidden');
+        log("Linux/Wasm failed: " + error.message);
+        log(error.stack || "");
+        throw error;
+      }
+    }, false);
+  </script>
+</body>
+</html>

@@ -1,0 +1,517 @@
+From 66c917eaad32544aaf992bffa61f1dac0ad37746 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 12 May 2024 17:15:17 +0200
+Subject: [PATCH] Add Wasm binfmt
+
+While ELF is used for basically every other Linux-supported
+architecture, current Wasm toolchains produce binaries in the .wasm
+format. The .wasm file format is also the format all major Wasm
+runtimes/VMs (e.g. browsers) consumes.
+---
+ arch/wasm/Kconfig |   2 +
+ fs/Kconfig.binfmt |   9 +
+ fs/Makefile       |   1 +
+ fs/binfmt_wasm.c  | 446 ++++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 458 insertions(+)
+ create mode 100644 fs/binfmt_wasm.c
+
+diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
+index f6e566f50..744e8c676 100644
+--- a/arch/wasm/Kconfig
++++ b/arch/wasm/Kconfig
+@@ -40,6 +40,8 @@ config WASM
+ 	select ARCH_SUPPORTS_LTO_CLANG
+ 	select ARCH_SUPPORTS_LTO_CLANG_THIN
+ 
++	select ARCH_HAS_BINFMT_WASM
++
+ 	# TODO: Very inefficient, replace with native stuff. Our atomic impl.
+ 	# of xchg and cmpxchg already supports 64-bit integers, we could use it.
+ 	select GENERIC_ATOMIC64
+diff --git a/fs/Kconfig.binfmt b/fs/Kconfig.binfmt
+index 93539aac0..cbddea6a0 100644
+--- a/fs/Kconfig.binfmt
++++ b/fs/Kconfig.binfmt
+@@ -142,6 +142,15 @@ config BINFMT_ZFLAT
+ 	help
+ 	  Support FLAT format compressed binaries
+ 
++config ARCH_HAS_BINFMT_WASM
++	bool
++
++config BINFMT_WASM
++	bool "Kernel support for Wasm binaries"
++	depends on ARCH_HAS_BINFMT_WASM
++	help
++	  Support WebAssembly format binaries.
++
+ config BINFMT_MISC
+ 	tristate "Kernel support for MISC binaries"
+ 	help
+diff --git a/fs/Makefile b/fs/Makefile
+index 5bfdbf0d7..ab4581f7d 100644
+--- a/fs/Makefile
++++ b/fs/Makefile
+@@ -44,6 +44,7 @@ obj-$(CONFIG_BINFMT_ELF)	+= binfmt_elf.o
+ obj-$(CONFIG_COMPAT_BINFMT_ELF)	+= compat_binfmt_elf.o
+ obj-$(CONFIG_BINFMT_ELF_FDPIC)	+= binfmt_elf_fdpic.o
+ obj-$(CONFIG_BINFMT_FLAT)	+= binfmt_flat.o
++obj-$(CONFIG_BINFMT_WASM)	+= binfmt_wasm.o
+ 
+ obj-$(CONFIG_FS_MBCACHE)	+= mbcache.o
+ obj-$(CONFIG_FS_POSIX_ACL)	+= posix_acl.o
+diff --git a/fs/binfmt_wasm.c b/fs/binfmt_wasm.c
+new file mode 100644
+index 000000000..51f268246
+--- /dev/null
++++ b/fs/binfmt_wasm.c
+@@ -0,0 +1,446 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Somewhat based on binfmt_flat.c and binfmt_elf_fdpic.c */
++
++#include <linux/kernel.h>
++#include <linux/sched.h>
++#include <linux/sched/task_stack.h>
++#include <linux/mm.h>
++#include <linux/mman.h>
++#include <linux/errno.h>
++#include <linux/signal.h>
++#include <linux/string.h>
++#include <linux/fs.h>
++#include <linux/file.h>
++#include <linux/ptrace.h>
++#include <linux/user.h>
++#include <linux/slab.h>
++#include <linux/binfmts.h>
++#include <linux/personality.h>
++#include <linux/init.h>
++#include <linux/uaccess.h>
++#include <linux/vmalloc.h>
++
++#define WASM_STACK_SIZE		(2UL * PAGE_SIZE)
++
++/*
++ * Userland expects the stack to be page aligned as of now, which allows it to
++ * find the initial stack pointer by rounding up the current stack pointer to
++ * the next page in the _start function. This allows _start to be written in C.
++ * If this restriction can be lifted we could instead use something like this:
++ * max_t(unsigned long, sizeof(void *), ARCH_SLAB_MINALIGN)
++ */
++#define WASM_STACK_ALIGN 	PAGE_SIZE
++
++#define WASM_DYLINK_MEMINFO	(0x01)
++
++/*
++ * Parse the env- and arg-strings in new user memory and create the pointer
++ * tables from them, and put their addresses on the "stack", recording the new
++ * stack pointer value.
++ */
++static int create_wasm_tables(struct linux_binprm *bprm, unsigned long arg_start)
++{
++	char __user *p;
++	unsigned long __user *sp;
++	long i, len;
++	const struct cred *cred = current_cred();
++
++	// We emulate common ELF auxillary vectors to help userland out a bit.
++	const u32 wasm_auxv[] = {
++		AT_NOTELF, 1U,
++		AT_PAGESZ, PAGE_SIZE,
++		AT_UID, from_kuid_munged(cred->user_ns, cred->uid),
++		AT_EUID, from_kuid_munged(cred->user_ns, cred->euid),
++		AT_GID, from_kgid_munged(cred->user_ns, cred->gid),
++		AT_EGID, from_kgid_munged(cred->user_ns, cred->gid),
++		AT_SECURE, bprm->secureexec,
++		AT_NULL, 0U /* end */
++	};
++
++	p = (char __user *)arg_start;
++	sp = (unsigned long __user *)current->mm->start_stack;
++
++	sp -= (sizeof(wasm_auxv) + (sizeof(unsigned long) - 1U)) /
++		sizeof(unsigned long);
++	sp -= bprm->envc + 1;
++	sp -= bprm->argc + 1;
++	sp -= 1; /* &argc */
++
++	current->mm->start_stack = (unsigned long)sp & -WASM_STACK_ALIGN;
++	sp = (unsigned long __user *)current->mm->start_stack;
++
++	if (put_user(bprm->argc, sp++))
++		return -EFAULT;
++
++	current->mm->arg_start = (unsigned long)p;
++	for (i = bprm->argc; i > 0; i--) {
++		if (put_user((unsigned long)p, sp++))
++			return -EFAULT;
++		len = strnlen_user(p, MAX_ARG_STRLEN);
++		if (!len || len > MAX_ARG_STRLEN)
++			return -EINVAL;
++		p += len;
++	}
++	if (put_user(0, sp++))
++		return -EFAULT;
++	current->mm->arg_end = (unsigned long)p;
++
++	current->mm->env_start = (unsigned long)p;
++	for (i = bprm->envc; i > 0; i--) {
++		if (put_user((unsigned long)p, sp++))
++			return -EFAULT;
++		len = strnlen_user(p, MAX_ARG_STRLEN);
++		if (!len || len > MAX_ARG_STRLEN)
++			return -EINVAL;
++		p += len;
++	}
++	if (put_user(0, sp++))
++		return -EFAULT;
++	current->mm->env_end = (unsigned long)p;
++
++	memcpy(sp, wasm_auxv, sizeof(wasm_auxv));
++
++	return 0;
++}
++
++/*
++ * Read unsigned LEB128 encoded value, encoding a maximum of 32 bits, limited to
++ * a certain length. The input can be anywhere from 0 to 5 bytes in length,
++ * unless limited by the count artgument. A count of 5 should normally be used.
++ */
++static bool
++wasm_consume_varU32(char **bufp, unsigned int *output, unsigned long count)
++{
++	unsigned int result = 0;
++	char* buf = *bufp;
++	char* end = buf + count;
++	unsigned char chunk;
++	int shift = 0;
++
++	while (buf != end) {
++		chunk = *(buf++);
++
++		result |= (chunk & 0x7F) << shift;
++		shift += 7;
++
++		if (!(chunk & 0x80))
++			break;
++	}
++
++	*output = result;
++	*bufp = buf;
++
++	/*
++	 * Return false to signal if the "continue bit" was set on the last
++	 * byte, indicating faulty input data, or premature exit if count < 5.
++	 */
++	return !(chunk & 0x80);
++}
++
++/*
++ * User data version of wasm_consume_varU32.
++ */
++static bool wasm_consume_varU32_user(
++		unsigned long *bufp, unsigned int *output, unsigned long count)
++{
++	unsigned int result = 0;
++	unsigned long buf = *bufp;
++	unsigned long end = buf + count;
++	unsigned char chunk;
++	int shift = 0;
++
++	while (buf != end) {
++		if (get_user(chunk, (unsigned char __user *)(buf++)))
++			return false;
++
++		result |= (chunk & 0x7F) << shift;
++		shift += 7;
++
++		if (!(chunk & 0x80))
++			break;
++	}
++
++	*output = result;
++	*bufp = buf;
++
++	/*
++	 * Return false to signal if the "continue bit" was set on the last
++	 * byte, indicating faulty input data, or premature exit if count < 5.
++	 */
++	return !(chunk & 0x80);
++}
++
++static int load_wasm_file(struct linux_binprm *bprm, unsigned long extra_stack)
++{
++	unsigned long data_start = 0; /* Will contain data and bss */
++	unsigned long stack_size;
++	unsigned long whole_start, whole_p, whole_size, whole_end;
++	loff_t whole_size_ll;
++	char *parsed = bprm->buf;
++	int ret;
++
++	/* Related to Wasm dylink.0 parsing: */
++	unsigned int dylink_0_length;
++	unsigned long count;
++	u8 subsection_id;
++	unsigned int subsection_length;
++	unsigned long subsection_end;
++
++	/* Related to WASM_DYLINK_MEMINFO parsing: */
++	bool has_meminfo = false;
++	unsigned int data_size; /* memorysize */
++	unsigned int data_align; /* memoryalignment unpacked */
++	unsigned int table_size; /* tablesize */
++	unsigned int table_align; /* tablealign unpacked */
++
++	if (memcmp(parsed, "\x00" "asm", 4UL)) { /* Wasm binary magic header */
++		return -ENOEXEC;
++	}
++	parsed += 4UL;
++
++	/* We only know version 1 of the format. */
++	if (memcmp(parsed, "\x01\x00\x00\x00", 4UL)) { /* Version 0x1 (MVP) */
++		return -ENOEXEC;
++	}
++	parsed += 4UL;
++
++	/*
++	 * We can only allow position independent code since Wasm has no MMU.
++	 * This is currently flagged by a "dylink.0" custom section (first type
++	 * byte 0), and should come as the first section in the file. If not, we
++	 * can't run this file. However, we could allow some other magic binfmt
++	 * to handle this (e.g. emulate support), so don't hard fail.
++	 */
++	if (*(parsed++) != 0x00
++			|| !wasm_consume_varU32(&parsed, &dylink_0_length, 5UL)
++			|| dylink_0_length < 9U
++			|| memcmp(parsed, "\x08" "dylink.0", 9UL)) {
++		return -ENOEXEC;
++	}
++	parsed += 9UL;
++
++	/*
++	 * Map the whole file into memory so we can read it and hand it off to
++	 * the host. We will unmap this as soon as the host has made its copy
++	 * (the host would not be able to use a shared buffer as source anyway).
++	 */
++	whole_size_ll = i_size_read(file_inode(bprm->file));
++	if (whole_size_ll > (loff_t)ULONG_MAX)
++		return -ENOMEM;
++
++	whole_size = (unsigned long)whole_size_ll;
++	if (whole_size < (unsigned long)(parsed - bprm->buf))
++		return -ENOEXEC;
++
++	/*
++	 * This would be a placed to check RLIMITs, but since Wasm can allocate
++	 * as much memory it wants on its own stack that makes little sense.
++	 */
++
++	ret = begin_new_exec(bprm);
++	if (ret)
++		return ret;
++
++	set_personality(PER_LINUX_32BIT);
++	setup_new_exec(bprm);
++
++	whole_start = vm_mmap(bprm->file, 0, whole_size,
++			PROT_READ | PROT_EXEC, MAP_PRIVATE, 0);
++	if (!whole_start || IS_ERR_VALUE(whole_start)) {
++		ret = whole_start ? (int)whole_start : -ENOMEM;
++		pr_err("Unable to mmap process binary, errno: %d\n", ret);
++		return ret;
++	}
++	whole_end = whole_start + whole_size;
++
++	/* Move parsed to the whole file, since bprm->buf is cut off. */
++	whole_p = whole_start +
++		((unsigned long)parsed - (unsigned long)bprm->buf);
++
++	/* Time to read some subsections of the dylink.0 section! */
++	while (!has_meminfo) {
++		if (whole_p == whole_end) {
++			pr_err("No dylink.0 subsection id");
++			ret = -ENOEXEC;
++			goto out_unmap;
++		} else if (get_user(subsection_id, (u8 __user *)(whole_p++))) {
++			pr_err("Failed to read dylink.0 subsection id");
++			ret = -EFAULT;
++			goto out_unmap;
++		}
++
++		count = min_t(unsigned long, 5UL, whole_end - whole_p);
++		if (!wasm_consume_varU32_user(&whole_p, &subsection_length, count)) {
++			pr_err("Failed to read dylink.0 subsection length");
++			ret = -ENOEXEC;
++			goto out_unmap;
++		}
++
++		subsection_end = whole_p + subsection_length;
++		if (subsection_end < whole_p /* overflow */
++				|| subsection_end > whole_end) {
++			pr_err("dylink.0 subsection length overflow");
++			ret = -ENOEXEC;
++			goto out_unmap;
++		}
++
++		if (subsection_id == WASM_DYLINK_MEMINFO) {
++			count = min_t(unsigned long, 5UL, subsection_end - whole_p);
++			if (!wasm_consume_varU32_user(&whole_p, &data_size, count)) {
++				pr_err("Failed to read dylink.0 meminfo memory size");
++				ret = -ENOEXEC;
++				goto out_unmap;
++			}
++			data_size = PAGE_ALIGN(data_size);
++
++			count = min_t(unsigned long, 5UL, subsection_end - whole_p);
++			if (!wasm_consume_varU32_user(&whole_p, &data_align, count)) {
++				pr_err("Failed to read dylink.0 meminfo memory alignment");
++				ret = -ENOEXEC;
++				goto out_unmap;
++			} else if (data_align > 31U) {
++				pr_err("dylink.0 meminfo memory alignment too large");
++				ret = -ENOEXEC;
++				goto out_unmap;
++			}
++			data_align = 1UL <<  (int)data_align;
++
++			count = min_t(unsigned long, 5UL, subsection_end - whole_p);
++			if (!wasm_consume_varU32_user(&whole_p, &table_size, count)) {
++				pr_err("Failed to read dylink.0 meminfo table size");
++				ret = -ENOEXEC;
++				goto out_unmap;
++			}
++			table_size = PAGE_ALIGN(table_size);
++
++			count = min_t(unsigned long, 5UL, subsection_end - whole_p);
++			if (!wasm_consume_varU32_user(&whole_p, &table_align, count)) {
++				pr_err("Failed to read dylink.0 meminfo table alignment");
++				ret = -ENOEXEC;
++				goto out_unmap;
++			} else if (table_align > 31U) {
++				pr_err("dylink.0 meminfo table alignment too large");
++				ret = -ENOEXEC;
++				goto out_unmap;
++			}
++			table_align = 1UL << (int)table_align;
++
++			has_meminfo = true;
++		}
++
++		whole_p = subsection_end;
++	}
++
++	if (!has_meminfo) {
++		pr_err("No dylink.0 meminfo found");
++		ret = -ENOEXEC;
++		goto out_unmap;
++	}
++
++	/*
++	 * MAP_ANMONYMOUS clears the data (and bss). In Wasm, the runtime
++	 * manages bss inside the data area. The runtime may rely on the data
++	 * being zeroed as it is placing bss inside (or rather not touchhing bss
++	 * pages at all). Thus data and bss are the same and zeroed.
++	 */
++	data_start = vm_mmap(NULL, 0, data_size,
++			PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0);
++	if (!data_start || IS_ERR_VALUE(data_start)) {
++		ret = data_start ? (int)data_start : -ENOMEM;
++		pr_err("Unable to allocate RAM for process data, errno: %d\n",
++			ret);
++		goto out_unmap;
++	}
++
++	/*
++	 * Create a stack, and put the brk at the start of this area.
++	*/
++	stack_size = PAGE_ALIGN(WASM_STACK_SIZE + extra_stack);
++	current->mm->start_brk = vm_mmap(NULL, 0, stack_size,
++			PROT_READ|PROT_WRITE,
++			MAP_PRIVATE|MAP_ANONYMOUS|MAP_GROWSDOWN, 0);
++	if (!current->mm->start_brk || IS_ERR_VALUE(current->mm->start_brk)) {
++		ret = current->mm->start_brk ?
++			(int)current->mm->start_brk : -ENOMEM;
++		pr_err("Unable to allocate RAM for stack, errno: %d\n", ret);
++		current->mm->start_brk = 0;
++		goto out_unmap;
++	}
++	current->mm->brk = current->mm->start_brk; /* Already page aligned... */
++#ifndef CONFIG_MMU
++	current->mm->context.end_brk = current->mm->start_brk + stack_size;
++#endif
++	current->mm->start_stack = current->mm->start_brk + stack_size;
++
++	/* Only set these if the above succeeds. */
++	current->mm->start_code = whole_start;
++	current->mm->end_code = whole_end;
++	current->mm->start_data = data_start;
++	current->mm->end_data = data_start + data_size;
++
++	return 0;
++
++out_unmap:
++	vm_munmap(whole_start, whole_size);
++	if (data_start)
++		vm_munmap(data_start, data_size);
++	return ret;
++}
++
++static int load_wasm_binary(struct linux_binprm *bprm);
++
++static struct linux_binfmt wasm_format = {
++	.module		= THIS_MODULE,
++	.load_binary	= load_wasm_binary,
++};
++
++static int load_wasm_binary(struct linux_binprm *bprm)
++{
++	struct pt_regs *regs = current_pt_regs();
++	unsigned long extra_stack = 0;
++	int res;
++
++	/*
++	 * We have to add the size of our arguments to our stack size
++	 * otherwise it's too easy for users to create stack overflows
++	 * by passing in a huge argument list.  And yes,  we have to be
++	 * pedantic and include space for the argv/envp array as it may have
++	 * a lot of entries.
++	 */
++#ifndef CONFIG_MMU
++	extra_stack += PAGE_SIZE * MAX_ARG_PAGES - bprm->p; /* the strings */
++#endif
++	extra_stack += (bprm->argc + 1) * sizeof(char *);   /* the argv array */
++	extra_stack += (bprm->envc + 1) * sizeof(char *);   /* the envp array */
++	extra_stack = ALIGN(extra_stack, WASM_STACK_ALIGN);
++
++	res = load_wasm_file(bprm, extra_stack);
++	if (res < 0)
++		return res;
++
++	set_binfmt(&wasm_format);
++
++#ifdef CONFIG_MMU
++	res = setup_arg_pages(bprm, STACK_TOP, EXSTACK_DEFAULT);
++	if (!res)
++		res = create_wasm_tables(bprm, bprm->p);
++#else
++	res = transfer_args_to_stack(bprm, &current->mm->start_stack);
++	if (!res)
++		res = create_wasm_tables(bprm, current->mm->start_stack);
++#endif
++	if (res)
++		return res;
++
++	finalize_exec(bprm);
++	start_thread(regs, current->mm->start_stack);
++
++	return 0;
++}
++
++static int __init init_wasm_binfmt(void)
++{
++	register_binfmt(&wasm_format);
++	return 0;
++}
++core_initcall(init_wasm_binfmt);
+-- 
+2.25.1
+

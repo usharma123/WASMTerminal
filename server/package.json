@@ -1,0 +1,17 @@
+{
+  "name": "ws-proxy-server",
+  "version": "1.0.0",
+  "description": "WebSocket-to-TCP proxy server for linux-wasm networking",
+  "main": "ws-proxy.js",
+  "scripts": {
+    "start": "node ws-proxy.js",
+    "dev": "AUTH_ENABLED=false node ws-proxy.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

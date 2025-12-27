@@ -1,0 +1,26 @@
+From 8d9649b899cd680ad4f5f57069eeceed72acc162 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 14 Sep 2025 17:29:37 +0200
+Subject: [PATCH] Add missing processor.h include for asm-generic/barrier.h
+
+The default implementation of smp_cond_load_relaxed() uses cpu_relax(),
+which is defined in the arch-specific processor.h header.
+---
+ include/asm-generic/barrier.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/asm-generic/barrier.h b/include/asm-generic/barrier.h
+index 961f4d88f..2fd9233f0 100644
+--- a/include/asm-generic/barrier.h
++++ b/include/asm-generic/barrier.h
+@@ -15,6 +15,7 @@
+ 
+ #include <linux/compiler.h>
+ #include <linux/kcsan-checks.h>
++#include <asm/processor.h>
+ #include <asm/rwonce.h>
+ 
+ #ifndef nop
+-- 
+2.25.1
+

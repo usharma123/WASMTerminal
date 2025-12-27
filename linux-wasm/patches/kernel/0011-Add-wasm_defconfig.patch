@@ -1,0 +1,41 @@
+From d1f576fb102da92fe3392c12125b5f0be03601f1 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 12 May 2024 19:31:55 +0200
+Subject: [PATCH] Add wasm_defconfig
+
+This patch needs to be updated to use an auto-generated config instead.
+---
+ arch/wasm/configs/wasm_defconfig | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+ create mode 100644 arch/wasm/configs/wasm_defconfig
+
+diff --git a/arch/wasm/configs/wasm_defconfig b/arch/wasm/configs/wasm_defconfig
+new file mode 100644
+index 000000000..10fb9e0ab
+--- /dev/null
++++ b/arch/wasm/configs/wasm_defconfig
+@@ -0,0 +1,21 @@
++CONFIG_SLAB=y
++
++CONFIG_NO_HZ_FULL=y
++
++CONFIG_MAGIC_SYSRQ=y
++CONFIG_DEBUG_KERNEL=y
++CONFIG_DEBUG_INFO_DWARF5=y
++CONFIG_HVC_WASM=y
++
++CONFIG_BLK_DEV_INITRD=y
++
++CONFIG_BINFMT_WASM=y
++CONFIG_BINFMT_MISC=m
++
++#CONFIG_MODULES=y
++#CONFIG_MODULE_UNLOAD=y
++
++#CONFIG_NET=y
++#CONFIG_PACKET=y
++#CONFIG_UNIX=y
++#CONFIG_INET=y
+-- 
+2.25.1
+

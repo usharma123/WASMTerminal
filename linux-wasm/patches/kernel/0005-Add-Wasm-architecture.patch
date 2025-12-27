@@ -1,0 +1,3758 @@
+From efdef05f887b3ea571b329f0b2a52d062635fe13 Mon Sep 17 00:00:00 2001
+From: Joel Severin <joel.severin@icemanor.se>
+Date: Sun, 14 Sep 2025 17:09:39 +0200
+Subject: [PATCH] Add Wasm architecture
+
+This is the bare minimum arch-specific code needed to get Linux to boot on
+Wasm (WebAssembly).
+---
+ Makefile                                |   9 +-
+ arch/wasm/Kbuild                        |   1 +
+ arch/wasm/Kconfig                       |  78 ++++++
+ arch/wasm/Kconfig.debug                 |  10 +
+ arch/wasm/Makefile                      |  24 ++
+ arch/wasm/include/asm/Kbuild            |  58 ++++
+ arch/wasm/include/asm/barrier.h         |  16 ++
+ arch/wasm/include/asm/cache.h           |  12 +
+ arch/wasm/include/asm/cmpxchg.h         | 111 ++++++++
+ arch/wasm/include/asm/cpuflags.h        |  22 ++
+ arch/wasm/include/asm/current.h         |  36 +++
+ arch/wasm/include/asm/delay.h           |  25 ++
+ arch/wasm/include/asm/elf.h             |  66 +++++
+ arch/wasm/include/asm/entry-common.h    |  16 ++
+ arch/wasm/include/asm/futex.h           |  68 +++++
+ arch/wasm/include/asm/irq.h             |  11 +
+ arch/wasm/include/asm/irq_work.h        |  13 +
+ arch/wasm/include/asm/irqflags.h        |  14 +
+ arch/wasm/include/asm/linkage.h         |  22 ++
+ arch/wasm/include/asm/mmu_context.h     |   8 +
+ arch/wasm/include/asm/panic.h           |  15 ++
+ arch/wasm/include/asm/pgtable.h         |  45 ++++
+ arch/wasm/include/asm/processor.h       |  50 ++++
+ arch/wasm/include/asm/ptrace.h          |  35 +++
+ arch/wasm/include/asm/smp.h             |  28 ++
+ arch/wasm/include/asm/stacktrace.h      |  20 ++
+ arch/wasm/include/asm/syscall.h         |  62 +++++
+ arch/wasm/include/asm/thread_info.h     | 105 ++++++++
+ arch/wasm/include/asm/time.h            |   9 +
+ arch/wasm/include/asm/vmalloc.h         |   6 +
+ arch/wasm/include/asm/wasm.h            |  29 ++
+ arch/wasm/include/uapi/asm/Kbuild       |   2 +
+ arch/wasm/include/uapi/asm/byteorder.h  |   8 +
+ arch/wasm/include/uapi/asm/ptrace.h     |  39 +++
+ arch/wasm/include/uapi/asm/sigcontext.h |  13 +
+ arch/wasm/include/uapi/asm/unistd.h     |   6 +
+ arch/wasm/kernel/Makefile               |  21 ++
+ arch/wasm/kernel/asm-offsets.c          |  36 +++
+ arch/wasm/kernel/cpu.c                  |  46 ++++
+ arch/wasm/kernel/cpuflags.c             |   5 +
+ arch/wasm/kernel/entry.S                | 299 ++++++++++++++++++++
+ arch/wasm/kernel/head.S                 | 110 ++++++++
+ arch/wasm/kernel/irq.c                  |  55 ++++
+ arch/wasm/kernel/irqflags.c             |  21 ++
+ arch/wasm/kernel/process.c              | 282 +++++++++++++++++++
+ arch/wasm/kernel/ptrace.c               |  13 +
+ arch/wasm/kernel/reboot.c               |  31 +++
+ arch/wasm/kernel/setup.c                |  84 ++++++
+ arch/wasm/kernel/signal.c               | 189 +++++++++++++
+ arch/wasm/kernel/smp.c                  | 344 ++++++++++++++++++++++++
+ arch/wasm/kernel/stack.c                |  26 ++
+ arch/wasm/kernel/sys_wasm.c             |  19 ++
+ arch/wasm/kernel/syscall_table.c        |  37 +++
+ arch/wasm/kernel/time.c                 |  88 ++++++
+ arch/wasm/kernel/traps.c                | 207 ++++++++++++++
+ arch/wasm/kernel/vmlinux.lds.S          |  65 +++++
+ arch/wasm/lib/Makefile                  |   3 +
+ arch/wasm/lib/delay.c                   |  19 ++
+ arch/wasm/mm/Makefile                   |   3 +
+ arch/wasm/mm/init.c                     |  21 ++
+ include/asm-generic/vmlinux.lds.h       |   4 +
+ include/uapi/linux/audit.h              |   1 +
+ include/uapi/linux/elf-em.h             |   1 +
+ scripts/Makefile.clang                  |   1 +
+ scripts/Makefile.vmlinux_o              |  10 +-
+ scripts/link-vmlinux.sh                 |  23 +-
+ 66 files changed, 3151 insertions(+), 5 deletions(-)
+ create mode 100644 arch/wasm/Kbuild
+ create mode 100644 arch/wasm/Kconfig
+ create mode 100644 arch/wasm/Kconfig.debug
+ create mode 100644 arch/wasm/Makefile
+ create mode 100644 arch/wasm/include/asm/Kbuild
+ create mode 100644 arch/wasm/include/asm/barrier.h
+ create mode 100644 arch/wasm/include/asm/cache.h
+ create mode 100644 arch/wasm/include/asm/cmpxchg.h
+ create mode 100644 arch/wasm/include/asm/cpuflags.h
+ create mode 100644 arch/wasm/include/asm/current.h
+ create mode 100644 arch/wasm/include/asm/delay.h
+ create mode 100644 arch/wasm/include/asm/elf.h
+ create mode 100644 arch/wasm/include/asm/entry-common.h
+ create mode 100644 arch/wasm/include/asm/futex.h
+ create mode 100644 arch/wasm/include/asm/irq.h
+ create mode 100644 arch/wasm/include/asm/irq_work.h
+ create mode 100644 arch/wasm/include/asm/irqflags.h
+ create mode 100644 arch/wasm/include/asm/linkage.h
+ create mode 100644 arch/wasm/include/asm/mmu_context.h
+ create mode 100644 arch/wasm/include/asm/panic.h
+ create mode 100644 arch/wasm/include/asm/pgtable.h
+ create mode 100644 arch/wasm/include/asm/processor.h
+ create mode 100644 arch/wasm/include/asm/ptrace.h
+ create mode 100644 arch/wasm/include/asm/smp.h
+ create mode 100644 arch/wasm/include/asm/stacktrace.h
+ create mode 100644 arch/wasm/include/asm/syscall.h
+ create mode 100644 arch/wasm/include/asm/thread_info.h
+ create mode 100644 arch/wasm/include/asm/time.h
+ create mode 100644 arch/wasm/include/asm/vmalloc.h
+ create mode 100644 arch/wasm/include/asm/wasm.h
+ create mode 100644 arch/wasm/include/uapi/asm/Kbuild
+ create mode 100644 arch/wasm/include/uapi/asm/byteorder.h
+ create mode 100644 arch/wasm/include/uapi/asm/ptrace.h
+ create mode 100644 arch/wasm/include/uapi/asm/sigcontext.h
+ create mode 100644 arch/wasm/include/uapi/asm/unistd.h
+ create mode 100644 arch/wasm/kernel/Makefile
+ create mode 100644 arch/wasm/kernel/asm-offsets.c
+ create mode 100644 arch/wasm/kernel/cpu.c
+ create mode 100644 arch/wasm/kernel/cpuflags.c
+ create mode 100644 arch/wasm/kernel/entry.S
+ create mode 100644 arch/wasm/kernel/head.S
+ create mode 100644 arch/wasm/kernel/irq.c
+ create mode 100644 arch/wasm/kernel/irqflags.c
+ create mode 100644 arch/wasm/kernel/process.c
+ create mode 100644 arch/wasm/kernel/ptrace.c
+ create mode 100644 arch/wasm/kernel/reboot.c
+ create mode 100644 arch/wasm/kernel/setup.c
+ create mode 100644 arch/wasm/kernel/signal.c
+ create mode 100644 arch/wasm/kernel/smp.c
+ create mode 100644 arch/wasm/kernel/stack.c
+ create mode 100644 arch/wasm/kernel/sys_wasm.c
+ create mode 100644 arch/wasm/kernel/syscall_table.c
+ create mode 100644 arch/wasm/kernel/time.c
+ create mode 100644 arch/wasm/kernel/traps.c
+ create mode 100644 arch/wasm/kernel/vmlinux.lds.S
+ create mode 100644 arch/wasm/lib/Makefile
+ create mode 100644 arch/wasm/lib/delay.c
+ create mode 100644 arch/wasm/mm/Makefile
+ create mode 100644 arch/wasm/mm/init.c
+
+diff --git a/Makefile b/Makefile
+index 34ea74d74..c69000c85 100644
+--- a/Makefile
++++ b/Makefile
+@@ -479,7 +479,11 @@ KBUILD_HOSTLDLIBS   := $(HOST_LFS_LIBS) $(HOSTLDLIBS)
+ CPP		= $(CC) -E
+ ifneq ($(LLVM),)
+ CC		= $(LLVM_PREFIX)clang$(LLVM_SUFFIX)
+-LD		= $(LLVM_PREFIX)ld.lld$(LLVM_SUFFIX)
++ifneq ($(ARCH),wasm)
++	LD	= $(LLVM_PREFIX)ld.lld$(LLVM_SUFFIX)
++else
++	LD	= $(LLVM_PREFIX)wasm-ld$(LLVM_SUFFIX)
++endif
+ AR		= $(LLVM_PREFIX)llvm-ar$(LLVM_SUFFIX)
+ NM		= $(LLVM_PREFIX)llvm-nm$(LLVM_SUFFIX)
+ OBJCOPY		= $(LLVM_PREFIX)llvm-objcopy$(LLVM_SUFFIX)
+@@ -1100,8 +1104,11 @@ KBUILD_AFLAGS   += $(KAFLAGS)
+ KBUILD_CFLAGS   += $(KCFLAGS)
+ KBUILD_RUSTFLAGS += $(KRUSTFLAGS)
+ 
++# Not supported in Wasm binaries yet, PR seems to be in the works (LLVM D107662).
++ifneq ($(ARCH),wasm)
+ KBUILD_LDFLAGS_MODULE += --build-id=sha1
+ LDFLAGS_vmlinux += --build-id=sha1
++endif
+ 
+ KBUILD_LDFLAGS	+= -z noexecstack
+ ifeq ($(CONFIG_LD_IS_BFD),y)
+diff --git a/arch/wasm/Kbuild b/arch/wasm/Kbuild
+new file mode 100644
+index 000000000..a4e40e534
+--- /dev/null
++++ b/arch/wasm/Kbuild
+@@ -0,0 +1 @@
++# SPDX-License-Identifier: GPL-2.0-only
+diff --git a/arch/wasm/Kconfig b/arch/wasm/Kconfig
+new file mode 100644
+index 000000000..f6e566f50
+--- /dev/null
++++ b/arch/wasm/Kconfig
+@@ -0,0 +1,78 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++menu "Wasm-specific options"
++
++# Wasm must run on many CPUs, as a task cannot be preempted, unless terminated.
++# Each CPU becomes a thread in the host OS, and is handled by its scheduler.
++# There is no MMU support in the current version of WebAssembly.
++
++config WASM
++	bool
++	default y
++	# The execution model of one task per cpu mandates the below options.
++	# One CPU is kept clear of tasks to act as a tick broadcast device.
++	select SMP
++	# PREEMPTION and PREEMPT_COUNT is not set, disallowing kernel preemption
++	select ARCH_NO_PREEMPT
++	select GENERIC_CLOCKEVENTS_BROADCAST
++	select ARCH_HAS_TICK_BROADCAST if GENERIC_CLOCKEVENTS_BROADCAST
++	# Needed by NO_HZ_FULL:
++	select HAVE_VIRT_CPU_ACCOUNTING_GEN
++	# TODO: Check that we comply with the user tracking requirements!
++	select HAVE_CONTEXT_TRACKING_USER
++
++	select NO_IP
++	select THREAD_INFO_IN_TASK
++	select ARCH_TASK_STRUCT_ON_STACK
++	select ARCH_TASK_STRUCT_ALLOCATOR
++	select ARCH_THREAD_STACK_ALLOCATOR
++	select GENERIC_SMP_IDLE_THREAD
++	select UACCESS_MEMCPY
++	select ARCH_USE_QUEUED_RWLOCKS
++	select GENERIC_CPU_DEVICES
++	select GENERIC_CSUM
++	select GENERIC_ENTRY
++	select GENERIC_HWEIGHT
++	select GENERIC_IRQ_SHOW
++	select HAVE_SYSCALL_TRACEPOINTS
++	select ARCH_HAVE_PANIC_NOTIFY
++	select ARCH_USE_BUILTIN_BSWAP
++	select ARCH_SUPPORTS_LTO_CLANG
++	select ARCH_SUPPORTS_LTO_CLANG_THIN
++
++	# TODO: Very inefficient, replace with native stuff. Our atomic impl.
++	# of xchg and cmpxchg already supports 64-bit integers, we could use it.
++	select GENERIC_ATOMIC64
++
++config SMP
++	bool "Symmetric Multi-Processing"
++	help
++	  This enables support for systems with more than one CPU.  In the
++	  context of Wasm, every task needs one CPU, since there is no
++	  preemption and no interrupts. If you say N here, you will only ever
++	  be able to run one task. Only do this if you really know what
++	  you're doing - there is a big risk you will lock up your system.
++
++	  If you don't know what to do here, say Y.
++
++config HZ
++	int
++	default 100
++
++config NR_CPUS
++	int
++	range 1 8192
++	default 64
++
++config GENERIC_CSUM
++	def_bool y
++
++config GENERIC_HWEIGHT
++	def_bool y
++
++config ARCH_HAVE_PANIC_NOTIFY
++	bool
++
++endmenu
++
++source "drivers/Kconfig"
+diff --git a/arch/wasm/Kconfig.debug b/arch/wasm/Kconfig.debug
+new file mode 100644
+index 000000000..8fc81eafa
+--- /dev/null
++++ b/arch/wasm/Kconfig.debug
+@@ -0,0 +1,10 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++config EARLY_PRINTK
++	bool "Early printk"
++	default y
++	help
++	  Write kernel log output directly to console.log.
++
++	  This is useful for kernel debugging when your machine crashes very
++	  early before the console code is initialized.
+diff --git a/arch/wasm/Makefile b/arch/wasm/Makefile
+new file mode 100644
+index 000000000..b86103e0b
+--- /dev/null
++++ b/arch/wasm/Makefile
+@@ -0,0 +1,24 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++KBUILD_DEFCONFIG := wasm_defconfig
++
++KCFLAGS += -EL -m32
++KCFLAGS += -nostdlib -fno-builtin
++
++# These flags are needed so that wasm-ld can be run with --shared-memory.
++KCFLAGS += -Xclang -target-feature -Xclang +atomics
++KCFLAGS += -Xclang -target-feature -Xclang +bulk-memory
++
++core-y += arch/wasm/kernel/
++core-y += arch/wasm/mm/
++libs-y += arch/wasm/lib/
++
++PHONY += bzImage
++
++all: bzImage
++
++bzImage: vmlinux
++
++define archhelp
++  echo  '* bzImage		- Compressed kernel image (arch/wasm/boot/bzImage)'
++endef
+diff --git a/arch/wasm/include/asm/Kbuild b/arch/wasm/include/asm/Kbuild
+new file mode 100644
+index 000000000..876a533cd
+--- /dev/null
++++ b/arch/wasm/include/asm/Kbuild
+@@ -0,0 +1,58 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++# TODO: Clean up headers that are not used by this arch.
++generic-y += access_ok.h
++generic-y += agp.h
++generic-y += asm-offsets.h
++generic-y += asm-prototypes.h
++generic-y += atomic64.h
++generic-y += audit_change_attr.h
++generic-y += audit_dir_write.h
++generic-y += audit_read.h
++generic-y += audit_signal.h
++generic-y += audit_write.h
++generic-y += bitsperlong.h
++generic-y += cmpxchg-local.h
++generic-y += early_ioremap.h
++generic-y += error-injection.h
++generic-y += export.h
++generic-y += extable.h
++generic-y += fixmap.h
++generic-y += flat.h
++generic-y += getorder.h
++generic-y += hugetlb.h
++generic-y += hyperv-tlfs.h
++generic-y += ide_iops.h
++generic-y += int-ll64.h
++generic-y += ioctl.h
++generic-y += iomap.h
++generic-y += kvm_para.h
++generic-y += kvm_types.h
++generic-y += logic_io.h
++generic-y += mcs_spinlock.h
++generic-y += memory_model.h
++generic-y += mm_hooks.h
++generic-y += mmiowb_types.h
++generic-y += mshyperv.h
++generic-y += numa.h
++generic-y += page.h
++generic-y += param.h
++generic-y += parport.h
++generic-y += pci_iomap.h
++generic-y += qrwlock.h
++generic-y += qrwlock_types.h
++generic-y += qspinlock.h
++generic-y += qspinlock_types.h
++generic-y += resource.h
++generic-y += seccomp.h
++generic-y += set_memory.h
++generic-y += signal.h
++generic-y += spinlock.h
++generic-y += spinlock_types.h
++generic-y += statfs.h
++generic-y += string.h
++generic-y += syscalls.h
++generic-y += tlb.h
++generic-y += user.h
++generic-y += vmlinux.lds.h
++generic-y += vtime.h
+diff --git a/arch/wasm/include/asm/barrier.h b/arch/wasm/include/asm/barrier.h
+new file mode 100644
+index 000000000..86d3fc9b2
+--- /dev/null
++++ b/arch/wasm/include/asm/barrier.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_BARRIER_H
++#define _ASM_WASM_BARRIER_H
++
++/*
++ * Inspired by:
++ * https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p0124r7.html
++ */
++#define mb()	__atomic_thread_fence(__ATOMIC_SEQ_CST)
++#define rmb()	__atomic_thread_fence(__ATOMIC_ACQ_REL)
++#define wmb()	__atomic_thread_fence(__ATOMIC_ACQ_REL)
++
++#include <asm-generic/barrier.h>
++
++#endif /* _ASM_WASM_BARRIER_H */
+diff --git a/arch/wasm/include/asm/cache.h b/arch/wasm/include/asm/cache.h
+new file mode 100644
+index 000000000..1abcb0191
+--- /dev/null
++++ b/arch/wasm/include/asm/cache.h
+@@ -0,0 +1,12 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_CACHE_H
++#define _ASM_WASM_CACHE_H
++
++/*
++ * Most architectures executing Wasm code has a cacheline size of 64 bytes.
++ */
++#define L1_CACHE_SHIFT		6
++#define L1_CACHE_BYTES		(1 << L1_CACHE_SHIFT)
++
++#endif /* _ASM_WASM_CACHE_H */
+diff --git a/arch/wasm/include/asm/cmpxchg.h b/arch/wasm/include/asm/cmpxchg.h
+new file mode 100644
+index 000000000..a870f2682
+--- /dev/null
++++ b/arch/wasm/include/asm/cmpxchg.h
+@@ -0,0 +1,111 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_CMPXCHG_H
++#define _ASM_WASM_CMPXCHG_H
++
++#include <linux/types.h>
++#include <linux/irqflags.h>
++
++/*
++ * Inspired by:
++ * https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p0124r7.html
++ * https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/linux-fs.git/tree/include/asm-generic/iso-cmpxchg.h?h=iso-atomic
++ *
++ * TODO: McKenney et. al. above mention that atomic operations that return a
++ * value should be marked with __ATOMIC_RELAXED and wrapped with
++ * smp_mb__before_atomic()/smp_mb__after_atomic() calls. Howells above,
++ * however, just applies __ATOMIC_SEQ_CST. What is the best approach?
++ */
++
++/*
++ * This function doesn't exist, so you'll get a linker error if
++ * something tries to do an invalidly-sized xchg().
++ */
++extern unsigned long long __generic_xchg_called_with_bad_pointer(void);
++
++static __always_inline unsigned long long __generic_xchg(
++	unsigned long long val, volatile void *ptr, int size)
++{
++	switch (size) {
++	case 1:
++		return __atomic_exchange_n(
++			(volatile u8 *)ptr, (u8)val, __ATOMIC_SEQ_CST);
++
++	case 2:
++		return __atomic_exchange_n(
++			(volatile u16 *)ptr, (u16)val, __ATOMIC_SEQ_CST);
++
++	case 4:
++		return __atomic_exchange_n(
++			(volatile u32 *)ptr, (u32)val, __ATOMIC_SEQ_CST);
++
++	case 8:
++		return __atomic_exchange_n(
++			(volatile u64 *)ptr, (u64)val, __ATOMIC_SEQ_CST);
++
++	default:
++		return __generic_xchg_called_with_bad_pointer();
++	}
++}
++
++#define arch_xchg(ptr, x) ({							\
++	((__typeof__(*(ptr))) __generic_xchg((unsigned long long)(x), (ptr),	\
++			sizeof(*(ptr))));					\
++})
++
++static __always_inline unsigned long long __generic_cmpxchg(volatile void *ptr,
++	unsigned long long oldVal, unsigned long long newVal, int size)
++{
++	/*
++	 * Unlike this functions' signature, __atomic_compare_exchange_n will
++	 * modify oldVal with the actual value if the compare fails.
++	 */
++	u8 expected8;
++	u16 expected16;
++	u32 expected32;
++	u64 expected64;
++
++	switch (size) {
++	case 1:
++		expected8 = (u8)oldVal;
++		__atomic_compare_exchange_n(
++			(volatile u8 *)ptr, &expected8, (u8)newVal,
++			false, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
++		return expected8;
++
++	case 2:
++		expected16 = (u16)oldVal;
++		__atomic_compare_exchange_n(
++			(volatile u16 *)ptr, &expected16, (u16)newVal,
++			false, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
++		return expected16;
++
++	case 4:
++		expected32 = (u32)oldVal;
++		__atomic_compare_exchange_n(
++			(volatile u32 *)ptr, &expected32, (u32)newVal,
++			false, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
++		return expected32;
++
++	case 8:
++		expected64 = (u64)oldVal;
++		__atomic_compare_exchange_n(
++			(volatile u64 *)ptr, &expected64, (u64)newVal,
++			false, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
++		return expected64;
++
++	default:
++		return __generic_xchg_called_with_bad_pointer();
++	}
++}
++
++#define arch_cmpxchg(ptr, o, n) ({						\
++	((__typeof__(*(ptr)))__generic_cmpxchg((ptr), (unsigned long long)(o),	\
++			(unsigned long long)(n), sizeof(*(ptr))));			\
++})
++
++#define arch_cmpxchg64		arch_cmpxchg
++#define arch_cmpxchg_local	arch_cmpxchg
++#define arch_cmpxchg64_local	arch_cmpxchg
++
++#endif /* _ASM_WASM_CMPXCHG_H */
+diff --git a/arch/wasm/include/asm/cpuflags.h b/arch/wasm/include/asm/cpuflags.h
+new file mode 100644
+index 000000000..365502f4f
+--- /dev/null
++++ b/arch/wasm/include/asm/cpuflags.h
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_CPUFLAGS_H
++#define _ASM_WASM_CPUFLAGS_H
++
++#include <linux/percpu.h>
++
++/*
++ * CPU flags handled by Wasm. These are used for accounting in many places.
++ * Interrupt: 1 if local interrupts are enabled.
++ * User mode: 1 if we're not in privileged mode.
++ *
++ * The reset value is 0: we boot into privileged mode with interrupts disabled.
++ */
++#define CPUFLAGS_INTERRUPT	0
++#define CPUFLAGS_USER_MODE	1
++
++#define CPUFLAGS_RESET_VALUE	0U
++
++DECLARE_PER_CPU(unsigned long, wasm_cpuflags);
++
++#endif /* _ASM_WASM_CPUFLAGS_H */
+diff --git a/arch/wasm/include/asm/current.h b/arch/wasm/include/asm/current.h
+new file mode 100644
+index 000000000..5f104a966
+--- /dev/null
++++ b/arch/wasm/include/asm/current.h
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_CURRENT_H
++#define _ASM_WASM_CURRENT_H
++
++/*
++ * Questionable but necessary to keep get_current() inline, due to the cyclic
++ * dependency between task_struct and thread_info.
++ */
++#ifndef ASM_OFFSETS_C
++#include <asm/asm-offsets.h>
++#endif
++
++#ifndef __ASSEMBLY__
++
++#include <linux/linkage.h>
++#include <asm/thread_info.h>
++
++struct task_struct;
++
++static inline struct task_struct *get_current(void)
++{
++#ifndef ASM_OFFSETS_C
++	char dummy; /* Something stored in the current kernel stack. */
++	unsigned long thread_page = (unsigned long)&dummy & THREAD_MASK;
++	return (struct task_struct *)(thread_page + THREAD_TASK_STRUCT_OFFSET);
++#else
++	return NULL;
++#endif
++}
++
++#define current (get_current())
++
++#endif /* !__ASSEMBLY__ */
++
++#endif /* _ASM_WASM_CURRENT_H */
+diff --git a/arch/wasm/include/asm/delay.h b/arch/wasm/include/asm/delay.h
+new file mode 100644
+index 000000000..0e3bd9346
+--- /dev/null
++++ b/arch/wasm/include/asm/delay.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_DELAY_H
++#define _ASM_WASM_DELAY_H
++
++extern void __delay(unsigned long loops);
++extern void __bad_udelay(void);
++extern void __bad_ndelay(void);
++
++/*
++ * Wasm uses 1 loop = 1 nanosecond. This makes the conversion easy.
++ *
++ * Just like the rest of the kernel, these macros polices you if you try to
++ * delay for too long. You should use a sleep function that calls schedule()
++ * internally if you need longer sleeps than this. In Wasm in particular, usage
++ * of these macros is really discouraged (what are you busy-waiting for?).
++ */
++
++#define udelay(n) (__builtin_constant_p(n) && (n) > 20000 ? \
++			__bad_udelay() : __delay((n) * 1000))
++
++#define ndelay(n) (__builtin_constant_p(n) && (n) > 20000000 ? \
++			__bad_ndelay() : __delay(n))
++
++#endif /* _ASM_WASM_DELAY_H */
+diff --git a/arch/wasm/include/asm/elf.h b/arch/wasm/include/asm/elf.h
+new file mode 100644
+index 000000000..3a02588f9
+--- /dev/null
++++ b/arch/wasm/include/asm/elf.h
+@@ -0,0 +1,66 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_ELF_H
++#define _ASM_WASM_ELF_H
++
++#include <uapi/linux/elf.h>
++#include <linux/compat.h>
++#include <uapi/asm/elf.h>
++#include <asm/auxvec.h>
++#include <asm/byteorder.h>
++
++#define ELF_ARCH	EM_WASM
++#define ELF_CLASS	ELFCLASS32
++#define ELF_DATA	ELFDATA2LSB
++
++#define elf_check_arch(x) (((x)->e_machine == ELF_ARCH) && \
++			   ((x)->e_ident[EI_CLASS] == ELF_CLASS))
++
++extern bool compat_elf_check_arch(Elf32_Ehdr *hdr);
++#define compat_elf_check_arch	compat_elf_check_arch
++
++#define CORE_DUMP_USE_REGSET
++#define ELF_EXEC_PAGESIZE	(PAGE_SIZE)
++
++/*
++ * This is the location that an ET_DYN program is loaded if exec'ed.  Typical
++ * use of this is to invoke "./ld.so someprog" to test out a new version of
++ * the loader.  We need to make sure that it is out of the way of the program
++ * that it will "exec", and that there is sufficient room for the brk.
++ */
++#define ELF_ET_DYN_BASE		((TASK_SIZE / 3) * 2)
++
++#ifdef CONFIG_64BIT
++#ifdef CONFIG_COMPAT
++#define STACK_RND_MASK		(test_thread_flag(TIF_32BIT) ? \
++				 0x7ff >> (PAGE_SHIFT - 12) : \
++				 0x3ffff >> (PAGE_SHIFT - 12))
++#else
++#define STACK_RND_MASK		(0x3ffff >> (PAGE_SHIFT - 12))
++#endif
++#endif
++
++/*
++ * Provides information on the availiable set of ISA extensions to userspace,
++ * via a bitmap that coorespends to each single-letter ISA extension.  This is
++ * essentially defunct, but will remain for compatibility with userspace.
++ */
++#define ELF_HWCAP	(elf_hwcap & ((1UL << RISCV_ISA_EXT_BASE) - 1))
++extern unsigned long elf_hwcap;
++
++/*
++ * This yields a string that ld.so will use to load implementation
++ * specific libraries for optimization.  This is more specific in
++ * intent than poking at uname or /proc/cpuinfo.
++ */
++#define ELF_PLATFORM	(NULL)
++
++#define COMPAT_ELF_PLATFORM	(NULL)
++
++#define ELF_CORE_COPY_REGS(dest, regs)			\
++do {							\
++	*(struct user_regs_struct *)&(dest) =		\
++		*(struct user_regs_struct *)regs;	\
++} while (0);
++
++#endif /* _ASM_WASM_ELF_H */
+diff --git a/arch/wasm/include/asm/entry-common.h b/arch/wasm/include/asm/entry-common.h
+new file mode 100644
+index 000000000..20155e98f
+--- /dev/null
++++ b/arch/wasm/include/asm/entry-common.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_ENTRY_COMMON_H
++#define _ASM_WASM_ENTRY_COMMON_H
++
++#include <asm/stacktrace.h>
++
++/*
++ * Needed by common/entry.c. Returning -1 signals failure, should it ever run...
++ *
++ * Wasm could in theory support seccomp, but the transformation from non-seccomp
++ * to seccomp mode would require quite a bit of thought to get everything right.
++ */
++#define __secure_computing(...) (-1)
++
++#endif /* _ASM_WASM_ENTRY_COMMON_H */
+diff --git a/arch/wasm/include/asm/futex.h b/arch/wasm/include/asm/futex.h
+new file mode 100644
+index 000000000..05f901e4e
+--- /dev/null
++++ b/arch/wasm/include/asm/futex.h
+@@ -0,0 +1,68 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_FUTEX_H
++#define _ASM_WASM_FUTEX_H
++
++#include <linux/futex.h>
++#include <linux/uaccess.h>
++#include <asm/errno.h>
++
++#define FUTEX_MAX_LOOPS	128
++
++static inline int futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
++						u32 oldval, u32 newval)
++{
++	int loops;
++	u32 expected;
++
++	if (!access_ok(uaddr, sizeof(u32)))
++		return -EFAULT;
++
++	for (loops = 0; loops < FUTEX_MAX_LOOPS; ++loops) {
++		expected = oldval;
++		if (__atomic_compare_exchange_n((volatile u32 *)uaddr,
++				&expected, newval, false, __ATOMIC_SEQ_CST,
++				__ATOMIC_RELAXED)) {
++			*uval = oldval;
++			return 0;
++		}
++	}
++
++	return -EAGAIN;
++}
++
++static inline int arch_futex_atomic_op_inuser(int op, u32 oparg, int *oval,
++					      u32 __user *uaddr)
++{
++	if (!access_ok(uaddr, sizeof(u32)))
++		return -EFAULT;
++
++	switch (op) {
++	case FUTEX_OP_SET:
++		*oval = __atomic_exchange_n(
++			(volatile u32 *)uaddr, oparg,  __ATOMIC_SEQ_CST);
++		break;
++	case FUTEX_OP_ADD:
++		*oval = __atomic_fetch_add(
++			(volatile u32 *)uaddr, oparg,  __ATOMIC_SEQ_CST);
++		break;
++	case FUTEX_OP_OR:
++		*oval = __atomic_fetch_or(
++			(volatile u32 *)uaddr, oparg,  __ATOMIC_SEQ_CST);
++		break;
++	case FUTEX_OP_ANDN:
++		*oval = __atomic_fetch_and(
++			(volatile u32 *)uaddr, ~oparg,  __ATOMIC_SEQ_CST);
++		break;
++	case FUTEX_OP_XOR:
++		*oval = __atomic_fetch_xor(
++			(volatile u32 *)uaddr, oparg,  __ATOMIC_SEQ_CST);
++		break;
++	default:
++		return -ENOSYS;
++	}
++
++	return 0;
++}
++
++#endif /* _ASM_WASM_FUTEX_H */
+diff --git a/arch/wasm/include/asm/irq.h b/arch/wasm/include/asm/irq.h
+new file mode 100644
+index 000000000..5069bef1f
+--- /dev/null
++++ b/arch/wasm/include/asm/irq.h
+@@ -0,0 +1,11 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_IRQ_H
++#define _ASM_WASM_IRQ_H
++
++#define NR_IRQS 32
++
++#define WASM_IRQ_IPI			0
++#define WASM_IRQ_TIMER			1
++
++#endif /* _ASM_WASM_IRQ_H */
+diff --git a/arch/wasm/include/asm/irq_work.h b/arch/wasm/include/asm/irq_work.h
+new file mode 100644
+index 000000000..fa9c40b0d
+--- /dev/null
++++ b/arch/wasm/include/asm/irq_work.h
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_IRQ_WORK_H
++#define _ASM_WASM_IRQ_WORK_H
++
++extern void arch_irq_work_raise(void);
++
++static inline bool arch_irq_work_has_interrupt(void)
++{
++	return true;
++}
++
++#endif /* _ASM_WASM_IRQ_WORK_H */
+diff --git a/arch/wasm/include/asm/irqflags.h b/arch/wasm/include/asm/irqflags.h
+new file mode 100644
+index 000000000..337a882f9
+--- /dev/null
++++ b/arch/wasm/include/asm/irqflags.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_IRQFLAGS_H
++#define _ASM_WASM_IRQFLAGS_H
++
++/*
++ * arch_local_save_flags and arch_local_irq_restore are defined as non-static
++ * functions as this header is included from places where percpu-variables and
++ * even definitions for raw_smp_processor_id() cannot be included...
++ */
++
++#include <asm-generic/irqflags.h>
++
++#endif /* _ASM_WASM_IRQFLAGS_H */
+diff --git a/arch/wasm/include/asm/linkage.h b/arch/wasm/include/asm/linkage.h
+new file mode 100644
+index 000000000..49f6776c5
+--- /dev/null
++++ b/arch/wasm/include/asm/linkage.h
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_LINKAGE_H
++#define _ASM_WASM_LINKAGE_H
++
++/*
++ * llvm-wasm crashes when generating the output file using the default
++ * definition in linux/linking.h. In addition to this, wasm-ld does not like it
++ * if two function signatures don't match, ruling out using a function with
++ * __attribute__ ((weak, alias("sys_ni_syscall"))) here, even if it is lacking a
++ * prototype (it assumes "one" (void) param).
++ *
++ * This has to be fixed by the host (or possibly some post-process build script)
++ * because there is no way to tell which prototype to use for which symbol.
++ * Getting rid of these stray declarations to begin with (e.g. setting
++ * ARCH_HAS_SYSCALL_WRAPPER) unfortunately causes problems for the
++ * sys_call_table generation. sys_call_table could be generated in some other
++ * way (or shape) but that would require other hacks to find available syscalls.
++ */
++#define cond_syscall(x)
++
++#endif /* _ASM_WASM_LINKAGE_H */
+diff --git a/arch/wasm/include/asm/mmu_context.h b/arch/wasm/include/asm/mmu_context.h
+new file mode 100644
+index 000000000..e9414c5c0
+--- /dev/null
++++ b/arch/wasm/include/asm/mmu_context.h
+@@ -0,0 +1,8 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_MMU_CONTEXT_H
++#define _ASM_WASM_MMU_CONTEXT_H
++
++#include <asm-generic/nommu_context.h>
++
++#endif /* _ASM_WASM_MMU_CONTEXT_H */
+diff --git a/arch/wasm/include/asm/panic.h b/arch/wasm/include/asm/panic.h
+new file mode 100644
+index 000000000..52ad0fa32
+--- /dev/null
++++ b/arch/wasm/include/asm/panic.h
+@@ -0,0 +1,15 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_PANIC_H
++#define _ASM_WASM_PANIC_H
++
++#include <asm/wasm.h>
++
++static inline void arch_panic_notify(const char *msg)
++{
++	wasm_panic(msg);
++}
++
++#include <asm-generic/panic.h>
++
++#endif /* _ASM_WASM_PANIC_H */
+diff --git a/arch/wasm/include/asm/pgtable.h b/arch/wasm/include/asm/pgtable.h
+new file mode 100644
+index 000000000..eeafad742
+--- /dev/null
++++ b/arch/wasm/include/asm/pgtable.h
+@@ -0,0 +1,45 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_PGTABLE_H
++#define _ASM_WASM_PGTABLE_H
++
++#include <asm-generic/pgtable-nopud.h>
++
++#include <linux/slab.h>
++#include <asm/processor.h>
++#include <asm/page.h>
++#include <asm/io.h>
++
++/*
++ * No MMU support so do nothing...
++ * Inspired by the various other NOMMU implementations in the kernel.
++ */
++
++#define pgd_present(pgd)	(1)
++#define pgd_none(pgd)		(0)
++#define pgd_bad(pgd)		(0)
++#define pgd_clear(pgdp)
++#define	pmd_offset(a, b)	((void *)0)
++
++#define PAGE_NONE	__pgprot(0)
++#define PAGE_SHARED	__pgprot(0)
++#define PAGE_COPY	__pgprot(0)
++#define PAGE_READONLY	__pgprot(0)
++#define PAGE_KERNEL	__pgprot(0)
++
++#define	VMALLOC_START	0
++#define	VMALLOC_END	0xFFFFFFFF
++#define	KMAP_START	0
++#define	KMAP_END	0xFFFFFFFF
++
++extern void paging_init(void);
++#define swapper_pg_dir ((pgd_t *) 0)
++
++/*
++ * ZERO_PAGE is a global shared page that is always zero: used
++ * for zero-mapped memory areas etc..
++ */
++extern unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)];
++#define ZERO_PAGE(vaddr) (virt_to_page(empty_zero_page))
++
++#endif /* _ASM_WASM_PGTABLE_H */
+diff --git a/arch/wasm/include/asm/processor.h b/arch/wasm/include/asm/processor.h
+new file mode 100644
+index 000000000..93243e16d
+--- /dev/null
++++ b/arch/wasm/include/asm/processor.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_PROCESSOR_H
++#define _ASM_WASM_PROCESSOR_H
++
++#ifndef __ASSEMBLY__
++
++struct pt_regs;
++
++/* 3 GB RAM for userspace, 1 GB for the kernel. */
++#define TASK_SIZE (0xC0000000)
++
++/*
++ * We run interrupts on CPU 1, keep it clear. Why not CPU 0? Because init needs
++ * to run on CPU 0 for a while. We don't need interrupts until SMP has started,
++ * but we need init before.
++ */
++#define IRQ_CPU 1
++
++#define cpu_relax()	barrier()
++
++struct thread_struct {
++};
++
++#define INIT_THREAD { \
++}
++
++void start_thread(struct pt_regs *regs, unsigned long stack_pointer);
++
++void do_irq_stacked(int irq_nr);
++
++int user_mode_tail(void);
++
++struct task_struct;
++static inline unsigned long __get_wchan(struct task_struct *p)
++{
++    /* Should return the function before schedule() was called. */
++    /* Will be shown under the "Waiting Channel" of the ps command. */
++    return 0;
++}
++
++/* We don't have an instruction pointer. See instruction_pointer.h */
++#define KSTK_EIP(task) (0)
++
++/* We could possibly expose the stack pointer (has some data)...? */
++#define KSTK_ESP(task) (0)
++
++#endif /* __ASSEMBLY__ */
++
++#endif /* _ASM_WASM_PROCESSOR_H */
+diff --git a/arch/wasm/include/asm/ptrace.h b/arch/wasm/include/asm/ptrace.h
+new file mode 100644
+index 000000000..40b4ff72d
+--- /dev/null
++++ b/arch/wasm/include/asm/ptrace.h
+@@ -0,0 +1,35 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_PTRACE_H
++#define _ASM_WASM_PTRACE_H
++
++#include <uapi/asm/ptrace.h>
++#include <asm/cpuflags.h>
++#include <asm/irqflags.h>
++
++#ifndef __ASSEMBLY__
++
++#define user_mode(regs) ((regs)->cpuflags & BIT(CPUFLAGS_USER_MODE))
++
++/* Not available in Wasm. */
++#define instruction_pointer(regs) (0)
++
++#define current_user_stack_pointer() (0)
++
++/* Not available (maybe we could extract this from a stacktrace?) */
++#define profile_pc(regs) instruction_pointer(regs)
++
++#define task_pt_regs(task) ((struct pt_regs *)(task) - 1U)
++#define current_pt_regs() task_pt_regs(current)
++
++#define task_switch_stack(task) ((struct switch_stack *)task_pt_regs(task) - 1U)
++#define current_switch_stack() task_switch_stack(current)
++
++static inline int regs_irqs_disabled(struct pt_regs *regs)
++{
++	return arch_irqs_disabled_flags(arch_local_save_flags());
++}
++
++#endif /* !__ASSEMBLY__ */
++
++#endif /* _ASM_WASM_PTRACE_H */
+diff --git a/arch/wasm/include/asm/smp.h b/arch/wasm/include/asm/smp.h
+new file mode 100644
+index 000000000..d47beeccb
+--- /dev/null
++++ b/arch/wasm/include/asm/smp.h
+@@ -0,0 +1,28 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_SMP_H
++#define _ASM_WASM_SMP_H
++
++#include <asm/wasm.h>
++
++#ifdef CONFIG_SMP
++
++#define raw_smp_processor_id() (current_thread_info()->cpu)
++
++void __init setup_smp_ipi(void);
++
++void arch_send_call_function_single_ipi(int cpu);
++
++static inline void arch_send_call_function_ipi_mask(const struct cpumask *mask)
++{
++	int cpu;
++
++	for_each_cpu(cpu, mask)
++		arch_send_call_function_single_ipi(cpu);
++}
++
++__visible void raise_interrupt(int cpu, int irq_nr);
++
++#endif /* !CONFIG_SMP */
++
++#endif /* _ASM_WASM_SMP_H */
+diff --git a/arch/wasm/include/asm/stacktrace.h b/arch/wasm/include/asm/stacktrace.h
+new file mode 100644
+index 000000000..2f702245e
+--- /dev/null
++++ b/arch/wasm/include/asm/stacktrace.h
+@@ -0,0 +1,20 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_STACKTRACE_H
++#define _ASM_WASM_STACKTRACE_H
++
++#include <linux/sched.h>
++#include <asm/ptrace.h>
++
++#define WASM_STACKTRACE_MAX_SIZE 1000U
++
++static inline bool on_thread_stack(void)
++{
++	/*
++	 * Since current is directly derived from the stack pointer on Wasm, we
++	 * can do this sneaky trick of comparing stack ends.
++	 */
++	return current->stack == (void*)((unsigned long)current & THREAD_MASK);
++}
++
++#endif /* _ASM_WASM_STACKTRACE_H */
+diff --git a/arch/wasm/include/asm/syscall.h b/arch/wasm/include/asm/syscall.h
+new file mode 100644
+index 000000000..a31199740
+--- /dev/null
++++ b/arch/wasm/include/asm/syscall.h
+@@ -0,0 +1,62 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_SYSCALL_H
++#define _ASM_WASM_SYSCALL_H
++
++#include <uapi/linux/audit.h>
++#include <asm/ptrace.h>
++
++extern void (* const sys_call_table[])(void);
++
++struct task_struct;
++
++static inline long syscall_get_nr(struct task_struct *task,
++				  struct pt_regs *regs)
++{
++	return regs->syscall_nr;
++}
++
++static inline void syscall_rollback(struct task_struct *task,
++				    struct pt_regs *regs)
++{
++	/* We don't need to rollback anything on Wasm. */
++}
++
++static inline long syscall_get_error(struct task_struct *task,
++				     struct pt_regs *regs)
++{
++	return IS_ERR_VALUE(regs->syscall_ret) ? regs->syscall_ret : 0;
++}
++
++static inline long syscall_get_return_value(struct task_struct *task,
++					    struct pt_regs *regs)
++{
++	return regs->syscall_ret;
++}
++
++static inline void syscall_set_return_value(struct task_struct *task,
++					    struct pt_regs *regs,
++					    int error, long val)
++{
++	regs->syscall_ret = error ? (long)error : val;
++}
++
++static inline void syscall_get_arguments(struct task_struct *task,
++					 struct pt_regs *regs,
++					 unsigned long *args)
++{
++	args[0] = regs->syscall_nr;
++	memcpy(&args[1], regs->syscall_args, sizeof(regs->syscall_args));
++}
++
++static inline int syscall_get_arch(struct task_struct *task)
++{
++	return AUDIT_ARCH_WASM32;
++}
++
++static inline bool arch_syscall_is_vdso_sigreturn(struct pt_regs *regs)
++{
++	return false;
++}
++
++#endif /* _ASM_WASM_SYSCALL_H */
+diff --git a/arch/wasm/include/asm/thread_info.h b/arch/wasm/include/asm/thread_info.h
+new file mode 100644
+index 000000000..2f9c43907
+--- /dev/null
++++ b/arch/wasm/include/asm/thread_info.h
+@@ -0,0 +1,105 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_THREAD_INFO_H
++#define _ASM_WASM_THREAD_INFO_H
++
++#include <asm/page.h>
++
++/*
++ * In the Wasm arch, thread_info sits at the top of task_struct and both reside
++ * at the very end of the stack area (which grows downwards).
++ *
++ * HIGHER ADDRESSES
++ *
++ * [ [ [...]        ] ] ^ <- (__stack_pointer & THREAD_MASK) + THREAD_SIZE
++ * [ [ [thread_info]] ] |
++ * [ [task_struct   ] ] | <- current, current_thread_info()
++ * [ [stack         ] ] | <- (stack starts with pt_regs + possibly switch_stack)
++ * [ [ [...]        ] ] | <- __stack_pointer (growing towards lower addresses)
++ * [                  ] |
++ * [    free space    ] | THREAD_SIZE
++ * [                  ] v <- (__stack_pointer & THREAD_MASK)
++ *
++ * LOWER ADDRESSES
++ *
++ * As can be seen, current == current_thread_info() in this arch. In order to
++ * access any of these, __stack_pointer can be masked by THREAD_MASK, since
++ * the kernel stack for every task will be aligned on a THREAD_SIZE boundary.
++ *
++ * Example of memory-growing instructions	Resides in
++ * --------------------------------------------	--------------------------------
++ * iX.const, iX.load, local.get, global.get	Wasm internal stack
++ * lobal.set __stack_pointer			__stack_pointer managed stack
++ *
++ * Stack usage in Wasm is pretty sparse. Most data resides in "locals" or on the
++ * internal Wasm stack. Both of these are not accessible from within Wasm,
++ * except outside the local usage of them of course. The stack we manage is used
++ * for things that Wasm can't put on any of those, for exmaple when a pointer is
++ * constructed when taking the address of an auto variable (i.e. the
++ * function/block scope in C). That stack is referred to by the Wasm global
++ * __stack_pointer and is known by the compiler. It is not part of the Wasm
++ * standard, but makes certain parts of the C standard possible to compile. Two
++ * pages should for this reason be enough as kernel stack. struct task_struct
++ * (including struct thread_info at its base) is about 2K, leaving 6K for the
++ * kernel stack.
++ */
++#define THREAD_SIZE_ORDER	(1)
++#define THREAD_SIZE		(PAGE_SIZE << THREAD_SIZE_ORDER)
++#define THREAD_MASK		(~(THREAD_SIZE - 1))
++
++#ifndef __ASSEMBLY__
++
++struct thread_info {
++	unsigned int		cpu;
++	unsigned int		flags;
++	int			preempt_count;	/* Needed but not really used */
++	int			instance_depth;	/* 0 = idle task, 1 = running */
++	unsigned long		syscall_work;	/* SYSCALL_WORK_ flags */
++};
++
++#define INIT_THREAD_INFO(tsk)			\
++{						\
++	.cpu = 0,				\
++	.flags = 0,				\
++	.preempt_count = INIT_PREEMPT_COUNT,	\
++	.instance_depth = 0,			\
++}
++
++struct task_struct;
++
++static inline void *arch_alloc_thread_stack_node(
++					struct task_struct *tsk, int node)
++{
++	return (void *)((unsigned long)tsk & THREAD_MASK);
++}
++
++static inline void arch_free_thread_stack(struct task_struct *tsk) { }
++
++struct task_struct *alloc_task_struct_node(int node);
++void free_task_struct(struct task_struct *tsk);
++
++#endif /* !__ASSEMBLY__ */
++
++#define TIF_SYSCALL_TRACE	0	/* syscall trace active */
++#define TIF_SIGPENDING		1	/* signal pending */
++#define TIF_NEED_RESCHED	2	/* rescheduling necessary */
++#define TIF_NOTIFY_SIGNAL	3	/* signal notifications exist */
++#define TIF_MEMDIE		4	/* is terminating due to OOM killer */
++#define TIF_NOTIFY_RESUME	5	/* callback before returning to user */
++#define TIF_NEVER_RUN		6	/* was never run by the scheduler */
++#define TIF_RELOAD_PROGRAM	7	/* should reload code at syscall end */
++#define TIF_DELIVER_SIGNAL	8	/* run sighandler at syscall end */
++#define TIF_RETURN_SIGNAL	9	/* return sighandler at syscall end */
++
++#define _TIF_SYSCALL_TRACE	(1 << TIF_SYSCALL_TRACE)
++#define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
++#define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
++#define _TIF_NOTIFY_SIGNAL	(1 << TIF_NOTIFY_SIGNAL)
++#define _TIF_MEMDIE		(1 << TIF_MEMDIE)
++#define _TIF_NOTIFY_RESUME	(1 << TIF_NOTIFY_RESUME)
++#define _TIF_NEVER_RUN		(1 << TIF_NEVER_RUN)
++#define _TIF_RELOAD_PROGRAM	(1 << TIF_RELOAD_PROGRAM)
++#define _TIF_DELIVER_SIGNAL	(1 << TIF_DELIVER_SIGNAL)
++#define _TIF_RETURN_SIGNAL	(1 << TIF_RETURN_SIGNAL)
++
++#endif /* _ASM_WASM_THREAD_INFO_H */
+diff --git a/arch/wasm/include/asm/time.h b/arch/wasm/include/asm/time.h
+new file mode 100644
+index 000000000..2577a1151
+--- /dev/null
++++ b/arch/wasm/include/asm/time.h
+@@ -0,0 +1,9 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_TIME_H
++#define _ASM_WASM_TIME_H
++
++void wasm_clockevent_enable(void);
++void wasm_program_timer(unsigned long delta);
++
++#endif /* _ASM_WASM_TIME_H */
+diff --git a/arch/wasm/include/asm/vmalloc.h b/arch/wasm/include/asm/vmalloc.h
+new file mode 100644
+index 000000000..f1c2216f2
+--- /dev/null
++++ b/arch/wasm/include/asm/vmalloc.h
+@@ -0,0 +1,6 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_VMALLOC_H
++#define _ASM_WASM_VMALLOC_H
++
++#endif /* _ASM_WASM_VMALLOC_H */
+diff --git a/arch/wasm/include/asm/wasm.h b/arch/wasm/include/asm/wasm.h
+new file mode 100644
+index 000000000..20decb1d5
+--- /dev/null
++++ b/arch/wasm/include/asm/wasm.h
+@@ -0,0 +1,29 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#ifndef _ASM_WASM_WASM_H
++#define _ASM_WASM_WASM_H
++
++/* These are symbols imported from the Wasm host. */
++
++extern void wasm_panic(const char *msg);
++extern void wasm_dump_stacktrace(char* buffer, unsigned long max_size);
++
++extern void wasm_start_cpu(unsigned int cpu, struct task_struct *idle_task,
++	unsigned long start_stack);
++extern void wasm_stop_cpu(unsigned int cpu);
++
++extern struct task_struct *wasm_create_and_run_task(
++	struct task_struct *prev_task, struct task_struct *new_task,
++	const char *name, unsigned long bin_start, unsigned long bin_end,
++	unsigned long data_start, unsigned long table_start);
++extern void wasm_release_task(struct task_struct *dead_task);
++extern struct task_struct *wasm_serialize_tasks(struct task_struct *prev_task,
++	struct task_struct *next_task);
++
++extern void wasm_load_executable(unsigned long bin_start, unsigned long bin_end,
++	unsigned long data_start, unsigned long table_start);
++extern void wasm_reload_program(void);
++
++extern void wasm_clone_callback(void);
++
++#endif /* _ASM_WASM_WASM_H */
+diff --git a/arch/wasm/include/uapi/asm/Kbuild b/arch/wasm/include/uapi/asm/Kbuild
+new file mode 100644
+index 000000000..b4bb51a5c
+--- /dev/null
++++ b/arch/wasm/include/uapi/asm/Kbuild
+@@ -0,0 +1,2 @@
++# SPDX-License-Identifier: GPL-2.0-only
++generic-y += ucontext.h
+diff --git a/arch/wasm/include/uapi/asm/byteorder.h b/arch/wasm/include/uapi/asm/byteorder.h
+new file mode 100644
+index 000000000..3f8945ac4
+--- /dev/null
++++ b/arch/wasm/include/uapi/asm/byteorder.h
+@@ -0,0 +1,8 @@
++/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
++
++#ifndef _UAPI_ASM_WASM_BYTEORDER_H
++#define _UAPI_ASM_WASM_BYTEORDER_H
++
++#include <linux/byteorder/little_endian.h>
++
++#endif /* _UAPI_ASM_WASM_BYTEORDER_H */
+diff --git a/arch/wasm/include/uapi/asm/ptrace.h b/arch/wasm/include/uapi/asm/ptrace.h
+new file mode 100644
+index 000000000..0761ce261
+--- /dev/null
++++ b/arch/wasm/include/uapi/asm/ptrace.h
+@@ -0,0 +1,39 @@
++/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
++
++#ifndef _UAPI_ASM_WASM_PTRACE_H
++#define _UAPI_ASM_WASM_PTRACE_H
++
++#define PTRACE_SYSEMU			31
++#define PTRACE_SYSEMU_SINGLESTEP	32
++
++#ifndef __ASSEMBLY__
++
++/* Registers stored during kernel entry (syscalls, IRQs and exceptions). */
++struct pt_regs {
++	unsigned long stack_pointer;	/* The __stack_pointer global. */
++	unsigned long cpuflags;		/* CPU Flags (interrupt, user mode). */
++	int syscall_nr;			/* Needed by syscall_get_nr() etc. */
++	long syscall_args[6];		/* Needed by syscall_get_args() etc. */
++	long syscall_ret;		/* Needed by syscall_*_return() etc. */
++};
++
++#define PT_REGS_INIT ((struct pt_regs){.syscall_nr = -1})
++
++/* Registers stored when switching between user processes (and signals). */
++struct switch_stack {
++	/* When kthread, kernel thread callback with arg. */
++	int (*fn)(void *);
++	void *fn_arg;
++
++	/*  When user task, the __tls_base global. Unused by the kernel. */
++	unsigned long tls;
++};
++
++/* Registers for user processes (gdb etc.), stable ABI compared to pt_regs. */
++struct user_regs_struct {
++	unsigned long stack_pointer;
++	unsigned long tls;
++};
++
++#endif /* __ASSEMBLY__ */
++#endif /* _UAPI_ASM_WASM_PTRACE_H */
+diff --git a/arch/wasm/include/uapi/asm/sigcontext.h b/arch/wasm/include/uapi/asm/sigcontext.h
+new file mode 100644
+index 000000000..7fa987d86
+--- /dev/null
++++ b/arch/wasm/include/uapi/asm/sigcontext.h
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
++
++#ifndef _UAPI_ASM_WASM_SIGCONTEXT_H
++#define _UAPI_ASM_WASM_SIGCONTEXT_H
++
++#include <asm/ptrace.h>
++
++/* State saved before a signal is handled, given to signal handlers. */
++struct sigcontext {
++	struct user_regs_struct regs;
++};
++
++#endif /* _UAPI_ASM_WASM_SIGCONTEXT_H */
+diff --git a/arch/wasm/include/uapi/asm/unistd.h b/arch/wasm/include/uapi/asm/unistd.h
+new file mode 100644
+index 000000000..9729b100b
+--- /dev/null
++++ b/arch/wasm/include/uapi/asm/unistd.h
+@@ -0,0 +1,6 @@
++/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
++
++#define __ARCH_WANT_SYS_CLONE
++#define __ARCH_WANT_SYS_CLONE3
++
++#include <asm-generic/unistd.h>
+diff --git a/arch/wasm/kernel/Makefile b/arch/wasm/kernel/Makefile
+new file mode 100644
+index 000000000..a630af519
+--- /dev/null
++++ b/arch/wasm/kernel/Makefile
+@@ -0,0 +1,21 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++extra-y += vmlinux.lds
++
++obj-y += cpu.o
++obj-y += cpuflags.o
++obj-y += entry.o
++obj-y += head.o
++obj-y += irqflags.o
++obj-y += irq.o
++obj-y += process.o
++obj-y += ptrace.o
++obj-y += reboot.o
++obj-y += setup.o
++obj-y += signal.o
++obj-y += smp.o
++obj-y += stack.o
++obj-y += sys_wasm.o
++obj-y += syscall_table.o
++obj-y += time.o
++obj-y += traps.o
+diff --git a/arch/wasm/kernel/asm-offsets.c b/arch/wasm/kernel/asm-offsets.c
+new file mode 100644
+index 000000000..272f0f461
+--- /dev/null
++++ b/arch/wasm/kernel/asm-offsets.c
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#define ASM_OFFSETS_C
++
++#include <linux/sched.h>
++#include <linux/kbuild.h>
++#include <asm/thread_info.h>
++
++void foo(void)
++{
++/*
++ * struct task_struct is stored just above the thread stack. It is aligned by
++ * L1_CACHE_BYTES, which is enforced by init_task and the task memory allocator.
++ *
++ * sizeof(pt_regs) and sizeof(task_struct) is naturally aligned by their size.
++ * The start of the actual stack has to be 16-byte aligned when calling C code.
++ */
++#define _THREAD_TASK_STRUCT_OFFSET	ALIGN_DOWN(THREAD_SIZE - sizeof(struct task_struct), L1_CACHE_BYTES)
++#define _THREAD_PT_REGS_OFFSET		(_THREAD_TASK_STRUCT_OFFSET - sizeof(struct pt_regs))
++#define _THREAD_SWITCH_STACK_OFFSET	(_THREAD_PT_REGS_OFFSET - sizeof(struct switch_stack))
++#define _THREAD_STACK_START		ALIGN_DOWN(_THREAD_SWITCH_STACK_OFFSET, 16)
++
++	DEFINE(THREAD_TASK_STRUCT_OFFSET, _THREAD_TASK_STRUCT_OFFSET);
++	BLANK();
++
++	DEFINE(THREAD_PT_REGS_OFFSET, _THREAD_PT_REGS_OFFSET);
++	DEFINE(PT_REGS_STACK_POINTER, offsetof(struct pt_regs, stack_pointer));
++	BLANK();
++
++	DEFINE(THREAD_SWITCH_STACK_OFFSET, _THREAD_SWITCH_STACK_OFFSET);
++	DEFINE(SWITCH_STACK_TLS, offsetof(struct switch_stack, tls));
++	BLANK();
++
++	DEFINE(THREAD_STACK_START, _THREAD_STACK_START);
++	BLANK();
++}
+diff --git a/arch/wasm/kernel/cpu.c b/arch/wasm/kernel/cpu.c
+new file mode 100644
+index 000000000..5fb9aa8ba
+--- /dev/null
++++ b/arch/wasm/kernel/cpu.c
+@@ -0,0 +1,46 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/cpu.h>
++#include <linux/seq_file.h>
++
++#ifdef CONFIG_PROC_FS
++
++static void *c_start(struct seq_file *m, loff_t *pos)
++{
++	if (*pos == nr_cpu_ids)
++		return NULL;
++
++	*pos = cpumask_next(*pos - 1, cpu_online_mask);
++	if ((*pos) < nr_cpu_ids)
++		return (void *)(uintptr_t)(1 + *pos);
++	return NULL;
++}
++
++static void *c_next(struct seq_file *m, void *v, loff_t *pos)
++{
++	(*pos)++;
++	return c_start(m, pos);
++}
++
++static void c_stop(struct seq_file *m, void *v)
++{
++}
++
++static int c_show(struct seq_file *m, void *v)
++{
++	unsigned long cpu_id = (unsigned long)v - 1;
++
++	seq_printf(m, "processor\t: %lu\n", cpu_id);
++	seq_printf(m, "vendor_id\t: Wasm\n");
++
++	return 0;
++}
++
++const struct seq_operations cpuinfo_op = {
++	.start	= c_start,
++	.next	= c_next,
++	.stop	= c_stop,
++	.show	= c_show,
++};
++
++#endif /* CONFIG_PROC_FS */
+diff --git a/arch/wasm/kernel/cpuflags.c b/arch/wasm/kernel/cpuflags.c
+new file mode 100644
+index 000000000..a97e9b58a
+--- /dev/null
++++ b/arch/wasm/kernel/cpuflags.c
+@@ -0,0 +1,5 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <asm/cpuflags.h>
++
++DEFINE_PER_CPU(unsigned long, wasm_cpuflags) = CPUFLAGS_RESET_VALUE;
+diff --git a/arch/wasm/kernel/entry.S b/arch/wasm/kernel/entry.S
+new file mode 100644
+index 000000000..04087b23f
+--- /dev/null
++++ b/arch/wasm/kernel/entry.S
+@@ -0,0 +1,299 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <asm/thread_info.h>
++
++#include <asm/asm-offsets.h>
++
++
++.globaltype __stack_pointer, i32
++
++.section .globals,"",@
++
++.globaltype __user_stack_pointer, i32
++__user_stack_pointer:
++.globaltype __user_tls_base, i32
++__user_tls_base:
++
++.section .text,"",@
++
++.globl get_user_stack_pointer
++get_user_stack_pointer:
++	.functype get_user_stack_pointer() -> (i32)
++	global.get __user_stack_pointer
++	end_function
++
++.globl get_user_tls_base
++get_user_tls_base:
++	.functype get_user_tls_base() -> (i32)
++	global.get __user_tls_base
++	end_function
++
++.functype user_mode_tail() -> (i32)
++.functype wasm_user_mode_tail(i32) -> ()
++
++.globl _user_mode_tail
++_user_mode_tail:
++	.functype _user_mode_tail() -> ()
++	.local i32 /* 0: flow */
++
++	block
++		call user_mode_tail
++		local.tee 0
++		i32.eqz
++		br_if 0
++
++		local.get 0
++		call wasm_user_mode_tail
++	end_block
++
++	end_function
++
++/*
++ * HIGH ADDRESSES
++ * --------------
++ * (thread end)        <- (current & THREAD_MASK) + THREAD_SIZE
++ * [task_struct]       <- current
++ * [pt_regs]
++ * [switch_stack]      <- initial __stack_pointer
++ * (alignment)
++ *                     <- Ready to call C code (16-byte aligned).
++ * (...free space...)
++ *
++ * (thread start)      <- current & THREAD_MASK
++ * -------------
++ * LOW ADDRESSES
++ */
++
++.functype __ret_from_fork(i32, i32) -> (i32)
++
++/* New process. Called by Wasm host when it runs a task for the first time. */
++.globl ret_from_fork
++ret_from_fork:
++	/* struct task_struct *prev_task, struct task_struct *next_task */
++	.functype ret_from_fork(i32, i32) -> (i32)
++
++	/* We can't switch back to a task so no need to save into prev_task. */
++
++	/* Load __stack_pointer from the new task's kernel stack area. */
++	local.get 1
++	i32.const zeroptr-THREAD_TASK_STRUCT_OFFSET+THREAD_STACK_START
++	i32.add
++	global.set __stack_pointer
++
++	/*
++	 * Finish up in C. Returns true if we have a clone callback to call.
++	 * (Upon return, the correct cpuflags for userland have been loaded.)
++	 */
++	local.get 0
++	local.get 1
++	call __ret_from_fork
++
++	/* Load __user_stack_pointer. */
++	local.get 1
++	i32.const zeroptr-THREAD_TASK_STRUCT_OFFSET+THREAD_PT_REGS_OFFSET+PT_REGS_STACK_POINTER
++	i32.add
++	i32.load 0
++	global.set __user_stack_pointer
++
++	/* Load __user_tls_base. */
++	local.get 1
++	i32.const zeroptr-THREAD_TASK_STRUCT_OFFSET+THREAD_SWITCH_STACK_OFFSET+SWITCH_STACK_TLS
++	i32.add
++	i32.load 0
++	global.set __user_tls_base
++
++	/* Clean up the stack. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_STACK_START+THREAD_TASK_STRUCT_OFFSET
++	i32.add
++	global.set __stack_pointer
++
++	/* In theory, the first thing we execute may be a signal handler. */
++	call _user_mode_tail
++
++	end_function
++
++.macro WASM_SYSCALL_ASM_HEAD
++	/*
++	 * The kernel expects pt_regs to be populated so save what we know.
++	 * The following fields are saved in the C part of this handling:
++	 * * cpuflags is set to appropriate values.
++	 * * syscall_nr and syscall_args are set from our call parameters.
++	 * * syscall_ret is set and returned to us.
++	 */
++
++	local.get 0
++	global.set __user_stack_pointer
++	local.get 1
++	global.set __user_tls_base
++
++	/* Allocate pt_regs + switch_stack + stack alignment. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_TASK_STRUCT_OFFSET+THREAD_STACK_START
++	i32.add
++	global.set __stack_pointer
++
++	/* Save __user_stack_pointer. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_STACK_START+THREAD_PT_REGS_OFFSET+PT_REGS_STACK_POINTER
++	i32.add
++	global.get __user_stack_pointer
++	i32.store 0
++
++	/* Save __user_tls_base. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_STACK_START+THREAD_SWITCH_STACK_OFFSET+SWITCH_STACK_TLS
++	i32.add
++	global.get __user_tls_base
++	i32.store 0
++
++	/*
++	 * Note: we don't need to swap the stack pointer, it already happened
++	 * automatically when calling into the vmlinux Wasm instance.
++	 */
++.endm
++
++.macro WASM_SYSCALL_ASM_FOOT
++	/* (The cpuflags have already been restored in C.) */
++
++	/* Load __user_stack_pointer. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_STACK_START+THREAD_PT_REGS_OFFSET+PT_REGS_STACK_POINTER
++	i32.add
++	i32.load 0
++	global.set __user_stack_pointer
++
++	/* Load __user_tls_base. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_STACK_START+THREAD_SWITCH_STACK_OFFSET+SWITCH_STACK_TLS
++	i32.add
++	i32.load 0
++	global.set __user_tls_base
++
++	/* Deallocate stack alignment + switch_stack + pt_regs. */
++	global.get __stack_pointer
++	i32.const zeroptr-THREAD_STACK_START+THREAD_TASK_STRUCT_OFFSET
++	i32.add
++	global.set __stack_pointer
++
++	/*
++	* Note: we don't need to swap the __stack_pointer, it will
++	* happen automatically when returning back into the user code
++	* Wasm instance (as that instance has its own __stack_pointer).
++	*
++	* We can exploit this as we're basically in userland, but with
++	* the kernel stack pointer loaded. This allows us to play tricks
++	* with execution in userland without setting a program counter.
++	*
++	* This is where signal handlers are called, and returned, and exec()
++	* calls stop the execution of the user program. In the case of exec()
++	* and signal return, the call stack collapses (this call never returns).
++	*/
++	call _user_mode_tail
++
++	end_function
++.endm
++
++.functype __wasm_syscall_0(i32) -> (i32)
++.functype __wasm_syscall_1(i32, i32) -> (i32)
++.functype __wasm_syscall_2(i32, i32, i32) -> (i32)
++.functype __wasm_syscall_3(i32, i32, i32, i32) -> (i32)
++.functype __wasm_syscall_4(i32, i32, i32, i32, i32) -> (i32)
++.functype __wasm_syscall_5(i32, i32, i32, i32, i32, i32) -> (i32)
++.functype __wasm_syscall_6(i32, i32, i32, i32, i32, i32, i32) -> (i32)
++
++/*
++ * These syscall functions should be called from userland code. In order to skip
++ * slow JavaScript glue code, they directly transfer all state needed into the
++ * kernel. This means that two initial parammeters are added for sp and tp.
++ * Parameter 0		[sp]: the userland stack pointer.
++ * Parameter 1		[tp]: the userland TLS pointer.
++ * Parameter 2		[nr]: the syscall nr.
++ * Parameter 3..8	[argN]: syscall argument(s) 0..5, where applicable.
++ *
++ * The kernel never modifies sp or tp for the calling task during syscalls and
++ * there is thus no need to restore them after the syscall returns. Apart from
++ * diagnosics, they only play a role in the clone and exec family of syscalls.
++ * Clone can be made to copy the supplied sp and tp to the new task. Exec should
++ * maintain the tp even for new process images (this use case is quite sketchy).
++ * Considering that the kernel does not care if userland even has a stack or TLS
++ * area, it would be OK to not transfer these pointers at all if desired. In
++ * both the clone and exec cases, the initial values of sp and tp would not be
++ * loaded at a syscall site, but instead during the ret_from_fork code flow.
++ */
++.globl wasm_syscall_0
++wasm_syscall_0:
++	.functype wasm_syscall_0(i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	call __wasm_syscall_0
++	WASM_SYSCALL_ASM_FOOT
++
++.globl wasm_syscall_1
++wasm_syscall_1:
++	.functype wasm_syscall_1(i32, i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	local.get 3
++	call __wasm_syscall_1
++	WASM_SYSCALL_ASM_FOOT
++
++.globl wasm_syscall_2
++wasm_syscall_2:
++	.functype wasm_syscall_2(i32, i32, i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	local.get 3
++	local.get 4
++	call __wasm_syscall_2
++	WASM_SYSCALL_ASM_FOOT
++
++.globl wasm_syscall_3
++wasm_syscall_3:
++	.functype wasm_syscall_3(i32, i32, i32, i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	local.get 3
++	local.get 4
++	local.get 5
++	call __wasm_syscall_3
++	WASM_SYSCALL_ASM_FOOT
++
++.globl wasm_syscall_4
++wasm_syscall_4:
++	.functype wasm_syscall_4(i32, i32, i32, i32, i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	local.get 3
++	local.get 4
++	local.get 5
++	local.get 6
++	call __wasm_syscall_4
++	WASM_SYSCALL_ASM_FOOT
++
++.globl wasm_syscall_5
++wasm_syscall_5:
++	.functype wasm_syscall_5(i32, i32, i32, i32, i32, i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	local.get 3
++	local.get 4
++	local.get 5
++	local.get 6
++	local.get 7
++	call __wasm_syscall_5
++	WASM_SYSCALL_ASM_FOOT
++
++.globl wasm_syscall_6
++wasm_syscall_6:
++	.functype wasm_syscall_6(i32, i32, i32, i32, i32, i32, i32, i32, i32) -> (i32)
++	WASM_SYSCALL_ASM_HEAD
++	local.get 2
++	local.get 3
++	local.get 4
++	local.get 5
++	local.get 6
++	local.get 7
++	local.get 8
++	call __wasm_syscall_6
++	WASM_SYSCALL_ASM_FOOT
+diff --git a/arch/wasm/kernel/head.S b/arch/wasm/kernel/head.S
+new file mode 100644
+index 000000000..e7403fcf2
+--- /dev/null
++++ b/arch/wasm/kernel/head.S
+@@ -0,0 +1,110 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++.globaltype __stack_pointer, i32
++
++.functype start_kernel() -> ()
++.functype start_secondary() -> ()
++
++/* vmlinux entrypoint */
++.globl _start
++_start:
++	.functype _start() -> ()
++	.local i32 /* alloc_limit */
++
++	/*
++	 * init_task resides just after the start of the stack. Higher addresses
++	 * contain task_struct init_task data, while the stack grows downwards.
++	 *
++	 * The initial stack needs to be 16-byte aligned when calling C code.
++	 * init_task already has a much higher alignment (by L1_CACHE_BYTES).
++	 */
++	i32.const init_task
++	global.set __stack_pointer
++
++	/* Save static memory used by vmlinux. */
++	i32.const memory_start
++	i32.const 0x10000 /* The first page is reserved for trapping nullptr. */
++	i32.store 0
++	i32.const memory_kernel_break
++	memory.size 0
++	i32.const 0x10000 /* Multiply by Wasm page size (65k). */
++	i32.mul
++	i32.store 0
++
++	/*
++	 * By some trial-and-error in Firefox and (mostly) Chromium:
++	 * * Allocating the full address space (4 GB) works most of the time.
++	 * * Allocating 4 GB fails often enough to be unstable. Curiously, it
++	 *   does not seem to have anything to do with free memory, and just
++	 *   reloading the page fixes it. Waiting a bit might be beneficial.
++	 * * Doing it from within Wasm seems to succeed more often(?).
++	 * * Allocating it in one go works better than stepping, as below, and
++	 *   would allow 4 GB. But stepping is more reliable.
++	 * * Stepping all the way from 4 GB makes Chromium accept the allocation
++	 *   soon enough, but then crash with SIGILL, probably because of OOM.
++	 * * Stepping from 500 MB is a tradeoff with all things considered. It
++	 *   ought indeed to be enough for anybody! (Oh, old joke, sorry...)
++	 *
++	 * Considering the above heuristics, a fair approach seems to start high
++	 * and aggressively step downwards, one page at a time. But not too high
++	 * or there will be OOM troubles related to current default browser
++	 * settings. Sadly, browsers don't seem to handle this in a very well
++	 * defined way, and we have to be moderately aggressive. An even more
++	 * aggressive approach that surprisingly works is to try again and again
++	 * with the same allocation size, but stepping almost achieves that.
++	 *
++	 * Whatever happens, the memory is zero-initialized and hopefully
++	 * overcommitted by the host OS. If it is not, that should be fixed!
++	 * Even better would be MMU support in Wasm, and this problem would be
++	 * solved altogether. And a whole slew of other problems too!
++	 *
++	 * Note that we cannot allocate the last page from within Wasm (even
++	 * though it is possible from the JavaScript host to create a Memory
++	 * with initial: 0x10000, memory.grow only allows us to get to 0xFFFF).
++	 * This is not too bad, as this is almost like not placing anything in
++	 * the first page to catch null pointers. This guards underflow instead.
++	 */
++	i32.const 0x2000 /* Immediately decremented by 1 in the loop below. */
++	memory.size 0 /* Returns the current number of pages. */
++	i32.sub /* Try grow by the difference, (max - curr). */
++	local.set 0
++	loop
++		local.get 0
++		i32.const 1
++		i32.sub
++		local.tee 0
++
++		memory.grow 0
++		i32.const -1 /* Check if allocation failed (returned -1). */
++		i32.eq
++		br_if 0
++	end_loop
++
++	block
++		local.get 0
++		i32.const 16
++		i32.lt_u
++		br_if 0
++
++		i32.const memory_end
++		local.get 0
++		i32.const 0x10000 /* Multiply by Wasm page size (65k). */
++		i32.mul
++		i32.store 0
++
++		call start_kernel /* Start the kernel! */
++	end_block
++
++	/* If we ever get here, the memory allocation failed. */
++	end_function
++
++.globl _start_secondary
++_start_secondary:
++	.functype _start_secondary(i32) -> ()
++	local.get 0
++	global.set __stack_pointer
++	call start_secondary
++	/* start_secondary should never return. */
++	unreachable
++
++	end_function
+diff --git a/arch/wasm/kernel/irq.c b/arch/wasm/kernel/irq.c
+new file mode 100644
+index 000000000..9092bf194
+--- /dev/null
++++ b/arch/wasm/kernel/irq.c
+@@ -0,0 +1,55 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/irq.h>
++#include <linux/irqchip.h>
++#include <asm/smp.h>
++
++static unsigned int wasm_irq_startup(struct irq_data *data)
++{
++	return 0;
++}
++
++static void wasm_irq_noop(struct irq_data *data)
++{
++}
++
++static int
++wasm_irq_set_affinity(struct irq_data *data, const struct cpumask *mask,
++		     bool force)
++{
++#ifdef CONFIG_SMP
++	printk("wasm_irq_set_affinity: %d %d %d", data->irq, cpumask_weight(mask), cpumask_first(mask));
++	return 0;
++#endif
++}
++
++struct irq_chip wasm_irq_chip = {
++	.name			= "wasm",
++	.irq_startup		= wasm_irq_startup,
++	.irq_shutdown		= wasm_irq_noop,
++	.irq_enable		= wasm_irq_noop,
++	.irq_disable		= wasm_irq_noop,
++	.irq_ack		= wasm_irq_noop,
++	.irq_mask		= wasm_irq_noop,
++	.irq_unmask		= wasm_irq_noop,
++	.irq_set_affinity	= wasm_irq_set_affinity,
++	.flags			= IRQCHIP_SKIP_SET_WAKE,
++};
++
++void __init init_IRQ(void)
++{
++	int irq;
++
++	for (irq = 0; irq < NR_IRQS; ++irq) {
++		if (irq == WASM_IRQ_IPI || irq == WASM_IRQ_TIMER) {
++			irq_set_percpu_devid(irq);
++			irq_set_chip_and_handler(
++				irq, &wasm_irq_chip, handle_percpu_devid_irq);
++		} else {
++			irq_set_chip_and_handler(
++				irq, &wasm_irq_chip, handle_simple_irq);
++		}
++	}
++
++	setup_smp_ipi();
++}
+diff --git a/arch/wasm/kernel/irqflags.c b/arch/wasm/kernel/irqflags.c
+new file mode 100644
+index 000000000..cd8e86e90
+--- /dev/null
++++ b/arch/wasm/kernel/irqflags.c
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <asm/irqflags.h>
++
++#include <linux/bitops.h>
++#include <asm/cpuflags.h>
++
++unsigned long arch_local_save_flags(void)
++{
++	if (*this_cpu_ptr(&wasm_cpuflags) & BIT(CPUFLAGS_INTERRUPT))
++		return ARCH_IRQ_ENABLED;
++	return ARCH_IRQ_DISABLED;
++}
++
++void arch_local_irq_restore(unsigned long flags)
++{
++	if (flags == ARCH_IRQ_DISABLED)
++		*this_cpu_ptr(&wasm_cpuflags) &= ~BIT(CPUFLAGS_INTERRUPT);
++	else
++		*this_cpu_ptr(&wasm_cpuflags) |= BIT(CPUFLAGS_INTERRUPT);
++}
+diff --git a/arch/wasm/kernel/process.c b/arch/wasm/kernel/process.c
+new file mode 100644
+index 000000000..1eaa35d8f
+--- /dev/null
++++ b/arch/wasm/kernel/process.c
+@@ -0,0 +1,282 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/entry-common.h>
++#include <linux/ptrace.h>
++#include <linux/sched.h>
++#include <linux/sched/debug.h>
++#include <linux/sched/task_stack.h>
++#include <linux/printk.h>
++#include <asm/cpuflags.h>
++#include <asm/wasm.h>
++
++static cpumask_t user_cpus = CPU_MASK_NONE;
++
++struct task_struct *__sched
++__switch_to(struct task_struct *prev_task, struct task_struct *next_task)
++{
++	/*
++	 * Here, a typical arch would normally:
++	 * * Swap registers and stack.
++	 * * Return to the instruction pointer of the new task.
++	 *
++	 * For new tasks (after fork), it would normally:
++	 * * Swap registers and stack.
++	 * * Call schedule_tail(), now in the context of the new process.
++	 * * If there is a kernel_fn set, call it with correct callback arg.
++	 * * Call syscall_exit_to_user_mode(current_pt_regs()) or equivalent.
++	 *   -> Return to the new instruciton pointer, ending up in userland.
++	 *
++	 * When prev_task was swapped in again (on another reschedule), we would
++	 * continue here and return back to the scheduler. However, Wasm can't
++	 * do this. Only the in-memory part of the call stack can be swapped and
++	 * there is no way to jump. Instead, we have to resort to serializing
++	 * processes (in the cooperative multitasking sense) by launching
++	 * several threads of execution on the host and use locks to make sure
++	 * that only one process at a time is running on the same cpu.
++	 *
++	 * As soon as more CPUs are enabled, we can start running concurrently,
++	 * by putting each task (except idle) on separate CPUs. Before that,
++	 * init and kthreadd will need to both run, until smp is started.
++	 * Thankfully we have control over these threads and know they will not
++	 * hog the CPU. They might call schedule() on longer waits, that's fine.
++	 *
++	 * There is still the issue with idle threads, we could optimize to get
++	 * away with them, which would cut the number of tasks used in the
++	 * system by half. However, doing so is pretty annoying, as the idle
++	 * loop is actually doing something and will eventually need to call
++	 * schedule_idle(). For now, we serialize them too.
++	 */
++
++	struct task_struct *last_task;
++	char name[TASK_COMM_LEN];
++
++	/* For user code. */
++	unsigned long bin_start = 0U;
++	unsigned long bin_end = 0U;
++	unsigned long data_start = 0U;
++
++	if (task_thread_info(next_task)->flags & _TIF_NEVER_RUN) {
++		task_thread_info(next_task)->flags &= ~_TIF_NEVER_RUN;
++
++		/* Get the name to aid debugging. */
++		get_task_comm(name, next_task);
++
++		/* For user executables, we need to clone the Wasm instance. */
++		if (next_task->mm->start_code) {
++			bin_start = next_task->mm->start_code;
++			bin_end = next_task->mm->end_code;
++			data_start = next_task->mm->start_data;
++		}
++
++		/* This is called instead of serialize the first time. */
++		last_task = wasm_create_and_run_task(prev_task, next_task, name,
++			bin_start, bin_end, data_start, 0U);
++	} else {
++		last_task = wasm_serialize_tasks(prev_task, next_task);
++	}
++
++	/* If/when we reach here, we got __switch_to():ed by another task. */
++
++	/* last_task is the previous task (never prev_task, maybe next_task). */
++	return last_task;
++}
++
++static int user_task_set_affinity(struct task_struct *p)
++{
++	/*
++	 * TODO: This function needs a review of proper approach and locking!
++	 * It's probably best to take a step back and think about how this
++	 * should be implemented properly in the first place, instead of adding
++	 * band aid on top of about every line that violates this and that. That
++	 * includes fixing release_thread() and garbage collecting unused CPUs.
++	 *
++	 * We may also have to move kthreads to IRQ_CPU (with an option of the
++	 * boot cpu before IRQ_CPU is up) in case they risk getting blocked.
++	 */
++	int retval;
++	int cpu;
++
++	/* Kthreads can be allowed to run on any online CPU. */
++	if (p->flags & PF_KTHREAD)
++		return 0;
++
++hack:
++	cpu = cpumask_first_zero(&user_cpus);
++	if (cpu >= nr_cpu_ids)
++		return -EBUSY;
++
++	if(cpu == IRQ_CPU) {
++		/* TODO: We should mark IRQ_CPU as taken at boot instead. */
++		cpumask_set_cpu(cpu, &user_cpus);
++		goto hack;
++	}
++
++	if (!cpu_online(cpu)) {
++		BUG_ON(!cpu_possible(cpu));
++
++		/* We should add_cpu(cpu) if we properly supported hotplug... */
++		retval = cpu_device_up(get_cpu_device(cpu));
++		if (retval)
++			return retval;
++	}
++
++	cpumask_set_cpu(cpu, &user_cpus);
++
++	retval = set_cpus_allowed_ptr(p, cpumask_of(cpu));
++	if (retval) {
++		cpumask_clear_cpu(cpu, &user_cpus);
++		return retval;
++	}
++
++	p->flags |= PF_NO_SETAFFINITY;
++
++	return 0;
++}
++
++asmlinkage unsigned
++__ret_from_fork(struct task_struct *prev_task, struct task_struct *next_task)
++{
++	struct switch_stack *next_switch_stack = task_switch_stack(next_task);
++
++	schedule_tail(prev_task);
++
++	/* Kernel thread callback. */
++	if (next_switch_stack->fn) {
++		next_switch_stack->fn(next_switch_stack->fn_arg);
++		/*
++		* Kernel threads can return, and in doing so, return to user
++		* space. This happens for the first user process (init).
++		*/
++
++		BUG_ON(current->flags & PF_KTHREAD);
++
++		/*
++		 * The binfmt loader would have set _TIF_RELOAD_PROGRAM
++		 * but we clear it now so that future syscalls don't trap.
++		 */
++		current_thread_info()->flags &= ~_TIF_RELOAD_PROGRAM;
++	}
++
++	/*
++	 * syscall_exit_to_user_mode() turns off interrupts, as most
++	 * architectures would IRET right after it, enabling them again. We
++	 * emulate this behaviour by loading cpuflags, which should both enable
++	 * interrupts again but also drop the privilege level down to USER_MODE.
++	 */
++	syscall_exit_to_user_mode(current_pt_regs());
++	*this_cpu_ptr(&wasm_cpuflags) = current_pt_regs()->cpuflags;
++
++	/*
++	 * After returning, the Wasm module binary will be initialized and run.
++	 * We run any signal handlers that should be run first, then:
++	 * kthread case: the host will call _start().
++	 * clone callback case: the host will call __libc_clone_callback().
++	 */
++	return !(next_switch_stack->fn);
++}
++
++void flush_thread(void)
++{
++	/* Wasm has no FP state to reset, so do nothing. */
++}
++
++int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
++{
++	struct pt_regs *parent_pt_regs = current_pt_regs();
++	struct switch_stack *parent_switch_stack = current_switch_stack();
++
++	struct pt_regs *child_pt_regs = task_pt_regs(p);
++	struct switch_stack *child_switch_stack = task_switch_stack(p);
++
++	task_thread_info(p)->flags |= _TIF_NEVER_RUN;
++
++	if (unlikely(args->fn)) {
++		/* Kernel thread */
++		memset(child_pt_regs, 0, sizeof(*child_pt_regs));
++		child_pt_regs->stack_pointer = (unsigned long)child_switch_stack;
++		child_pt_regs->cpuflags = BIT(CPUFLAGS_INTERRUPT);
++
++		memset(child_switch_stack, 0, sizeof(*child_switch_stack));
++		child_switch_stack->fn = args->fn;
++		child_switch_stack->fn_arg = args->fn_arg;
++	} else {
++		/* User thread */
++		*child_pt_regs = *parent_pt_regs;
++		if (args->stack)
++			child_pt_regs->stack_pointer = args->stack;
++
++		*child_switch_stack = *parent_switch_stack;
++		child_switch_stack->fn = NULL;
++		child_switch_stack->fn_arg = NULL;
++		if (args->flags & CLONE_SETTLS)
++			child_switch_stack->tls = args->tls;
++	}
++
++	if (!p->mm->binfmt) {
++		/* These are normally not zeroed out in copy_process(). */
++		current->mm->start_code = 0;
++		current->mm->end_code = 0;
++		current->mm->start_stack = 0;
++		current->mm->start_data = 0;
++		current->mm->end_data = 0;
++	}
++
++	return user_task_set_affinity(p);
++}
++
++/*
++ * Set up a thread for executing a new program.
++ */
++void start_thread(struct pt_regs *regs, unsigned long stack_pointer)
++{
++	memset(regs, 0, sizeof(*regs));
++	regs->stack_pointer = stack_pointer;
++	regs->cpuflags = BIT(CPUFLAGS_USER_MODE) | BIT(CPUFLAGS_INTERRUPT);
++
++	wasm_load_executable(current->mm->start_code, current->mm->end_code,
++		current->mm->start_data, 0U);
++
++	/* Reload the program when the current syscall exits. */
++	current_thread_info()->flags |= _TIF_RELOAD_PROGRAM;
++}
++
++void release_thread(struct task_struct *dead_task)
++{
++	/* TODO: This code also needs review, like user_task_set_affinity(). */
++	if (!(dead_task->flags & PF_KTHREAD)) {
++		BUG_ON(dead_task->nr_cpus_allowed != 1);
++		BUG_ON(cpumask_first(&dead_task->cpus_mask)
++			!= task_thread_info(dead_task)->cpu);
++		cpumask_clear_cpu(task_thread_info(dead_task)->cpu, &user_cpus);
++	}
++
++	wasm_release_task(dead_task);
++}
++
++void show_regs(struct pt_regs *regs)
++{
++	show_regs_print_info(KERN_DEFAULT);
++
++	pr_cont("cpuflags: %08x sp: %08x flags: %08x preempt_count: %08x\n",
++		(unsigned)regs->cpuflags,
++		(unsigned)regs->stack_pointer,
++		(unsigned)current_thread_info()->flags,
++		(unsigned)current_thread_info()->preempt_count);
++}
++
++void show_stack(struct task_struct *task, unsigned long *stack,
++		const char *loglvl)
++{
++	char *stack_trace;
++
++	printk("%sStack from %08lx:", loglvl, (unsigned long)stack);
++
++	stack_trace = kmalloc(WASM_STACKTRACE_MAX_SIZE, GFP_ATOMIC);
++	if (stack_trace) {
++		wasm_dump_stacktrace(stack_trace, WASM_STACKTRACE_MAX_SIZE);
++		printk("%s", stack_trace);
++	} else {
++		printk("Failed to allocate stack trace buffer.");
++	}
++	kfree(stack_trace);
++}
+diff --git a/arch/wasm/kernel/ptrace.c b/arch/wasm/kernel/ptrace.c
+new file mode 100644
+index 000000000..a52667068
+--- /dev/null
++++ b/arch/wasm/kernel/ptrace.c
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/ptrace.h>
++
++void ptrace_disable(struct task_struct *child)
++{
++}
++
++long arch_ptrace(struct task_struct *child, long request, unsigned long addr,
++	unsigned long data)
++{
++	return ptrace_request(child, request, addr, data);
++}
+diff --git a/arch/wasm/kernel/reboot.c b/arch/wasm/kernel/reboot.c
+new file mode 100644
+index 000000000..271e4ef64
+--- /dev/null
++++ b/arch/wasm/kernel/reboot.c
+@@ -0,0 +1,31 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/reboot.h>
++#include <linux/irqflags.h>
++#include <linux/smp.h>
++#include <linux/printk.h>
++
++void machine_restart(char *cmd)
++{
++	local_irq_disable();
++	smp_send_stop();
++
++	do_kernel_restart(cmd);
++
++	printk("Reboot failed -- System halted\n");
++	for (;;);
++}
++
++void machine_halt(void)
++{
++	local_irq_disable();
++	smp_send_stop();
++	for (;;);
++}
++
++void machine_power_off(void)
++{
++	local_irq_disable();
++	smp_send_stop();
++	do_kernel_power_off();
++}
+diff --git a/arch/wasm/kernel/setup.c b/arch/wasm/kernel/setup.c
+new file mode 100644
+index 000000000..2ea9cc364
+--- /dev/null
++++ b/arch/wasm/kernel/setup.c
+@@ -0,0 +1,84 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/init.h>
++#include <linux/screen_info.h>
++#include <linux/memblock.h>
++#include <linux/module.h>
++#include <linux/mm.h>
++
++/*
++ * The format of "screen_info" is strange, and due to early
++ * i386-setup code. This is just enough to make the console
++ * code think we're on a VGA color display.
++ */
++struct screen_info screen_info = {
++	.orig_x = 0,
++	.orig_y = 25,
++	.orig_video_cols = 80,
++	.orig_video_lines = 25,
++	.orig_video_isVGA = 1,
++	.orig_video_points = 16,
++};
++
++unsigned long memory_start;
++EXPORT_SYMBOL(memory_start);
++
++unsigned long memory_end;
++EXPORT_SYMBOL(memory_end);
++
++unsigned long memory_kernel_break;
++EXPORT_SYMBOL(memory_kernel_break);
++
++void __init smp_prepare_cpus(unsigned int max_cpus)
++{
++	unsigned i;
++
++	for_each_possible_cpu(i)
++		set_cpu_present(i, true);
++}
++
++void __init smp_init_cpus(void)
++{
++	unsigned i;
++	unsigned int ncpus = NR_CPUS; /* TODO: make this configurable */
++
++	pr_info("%s: Core Count = %d\n", __func__, ncpus);
++
++	if (ncpus > NR_CPUS) {
++		ncpus = NR_CPUS;
++		pr_info("%s: limiting core count by %d\n", __func__, ncpus);
++	}
++
++	for (i = 0; i < ncpus; ++i)
++		set_cpu_possible(i, true);
++}
++
++void __init smp_prepare_boot_cpu(void)
++{
++}
++
++void __init setup_arch(char **cmdline_p)
++{
++	unsigned long max_zone_pfn[MAX_NR_ZONES] = {0};
++
++	/* Save unparsed command line copy for /proc/cmdline */
++	*cmdline_p = boot_command_line;
++
++	parse_early_param();
++
++	/* See head.S for the logic that sets up these values. */
++	memblock_reserve(memory_start, memory_kernel_break - memory_start);
++	memblock_add(memory_start, memory_end - memory_start);
++
++	/* pcpu_find_block_fit() returns signed 32-bit memory addresses, ugh. */
++	memblock_set_current_limit(0x80000000); /* Only positive addresses. */
++
++	/* This is needed so that more than 128 allocations can be made. */
++	memblock_allow_resize();
++
++	/* Initialize zones, so that memory can be allocated beyond bootmem. */
++	max_zone_pfn[ZONE_NORMAL] = memory_end >> PAGE_SHIFT;
++	free_area_init(max_zone_pfn);
++
++	smp_init_cpus();
++}
+diff --git a/arch/wasm/kernel/signal.c b/arch/wasm/kernel/signal.c
+new file mode 100644
+index 000000000..ec1753ae2
+--- /dev/null
++++ b/arch/wasm/kernel/signal.c
+@@ -0,0 +1,189 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/entry-common.h>
++#include <asm/ucontext.h>
++
++struct rt_sigframe {
++	int sig_param;
++
++	/*
++	 * info_param and uc_param are convenience pointers that allow extension
++	 * of rt_sigframe in the future and easy detection of whether SA_SIGINFO
++	 * is set (they are NULL if it is not set).
++	 */
++	siginfo_t *info_param;
++	void *uc_param;
++
++	union {
++		/* Signature the kernel uses internaly ("opaque type"). */
++		__sighandler_t sa_handler;
++
++		/* Signature libc should use when SA_SIGINFO is set. */
++		void (*sigaction)(int sig, siginfo_t *info, void *uc);
++
++		/* Signature libc should use when SA_SIGINFO is not set. */
++		void (*handler)(int sig);
++	};
++
++	/*
++	 * info and uc are used for sigaction (SA_SIGINFO) but ignored for
++	 * handler (!SA_SIGINFO). However, uc is still used by the kernel when
++	 * handler is used, as it stores the regs to restore upon sigreturn.
++	 * This is what allows signal handlers to be stacked.
++	 */
++	struct siginfo info;
++	struct ucontext uc;
++};
++
++SYSCALL_DEFINE0(rt_sigreturn)
++{
++	struct pt_regs *regs = current_pt_regs();
++	struct switch_stack *switch_stack = current_switch_stack();
++	struct rt_sigframe __user *frame =
++		(struct rt_sigframe __user *)regs->stack_pointer;
++	struct user_regs_struct __user *user_regs = &frame->uc.uc_mcontext.regs;
++	sigset_t set;
++
++	/* Always make any pending restarted system calls return -EINTR */
++	current->restart_block.fn = do_no_restart_syscall;
++
++	if (!access_ok(frame, sizeof(*frame)))
++		goto badframe;
++
++	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
++		goto badframe;
++
++	set_current_blocked(&set);
++
++	if (__get_user(regs->stack_pointer, &user_regs->stack_pointer))
++		goto badframe;
++	if (__get_user(switch_stack->tls, &user_regs->tls))
++		goto badframe;
++
++	if (restore_altstack(&frame->uc.uc_stack))
++		goto badframe;
++
++	current_thread_info()->flags |= _TIF_RETURN_SIGNAL;
++
++	return 0;
++
++badframe:
++	force_sig(SIGSEGV);
++
++	return 0;
++}
++
++static int setup_rt_frame(struct ksignal *ksig, sigset_t *set,
++	struct pt_regs *regs)
++{
++	struct switch_stack *switch_stack = (struct switch_stack *)regs - 1U;
++	unsigned long stack_pointer = sigsp(regs->stack_pointer, ksig);
++	struct rt_sigframe __user *frame;
++	long err = 0;
++
++	/*
++	 * Allocate storage for frame, aligning it for itself and for further C
++	 * function calling (which shoulld really be the largest alignment...).
++	 */
++	stack_pointer -= sizeof(*frame);
++	stack_pointer &= -16UL;
++	stack_pointer &= -(unsigned long)__alignof__(*frame);
++	frame = (struct rt_sigframe __user *)stack_pointer;
++
++	if (!access_ok(frame, sizeof(*frame)))
++		return -EFAULT;
++
++	/* struct siginfo info */
++	err |= copy_siginfo_to_user(&frame->info, &ksig->info);
++
++	/* struct ucontext uc */
++	err |= __put_user(0, &frame->uc.uc_flags);
++	err |= __put_user(NULL, &frame->uc.uc_link);
++	err |= __save_altstack(&frame->uc.uc_stack, regs->stack_pointer);
++	err |= __put_user(regs->stack_pointer,
++			  &frame->uc.uc_mcontext.regs.stack_pointer);
++	err |= __put_user(switch_stack->tls, &frame->uc.uc_mcontext.regs.tls);
++	err |= __copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set));
++
++	/* int sig_param */
++	err |= __put_user(ksig->sig, &frame->sig_param);
++
++	/* info_param and uc_param convenience pointers */
++	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
++		err |= __put_user(&frame->info, &frame->info_param);
++		err |= __put_user(&frame->uc, &frame->uc_param);
++	} else {
++		err |= __put_user(NULL, &frame->info_param);
++		err |= __put_user(NULL, &frame->uc_param);
++	}
++
++	/* __sighandler_t sa_handler */
++	err |= __put_user(ksig->ka.sa.sa_handler, &frame->sa_handler);
++
++	if (err)
++		return -EFAULT;
++
++	regs->stack_pointer = stack_pointer;
++	current_thread_info()->flags |= _TIF_DELIVER_SIGNAL;
++
++	return 0;
++}
++
++static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
++{
++	sigset_t *oldset = sigmask_to_save();
++	int ret;
++
++	/* If we're from a syscall, cancel syscall restarting if appropriate. */
++	if (regs->syscall_nr != -1) {
++		switch (regs->syscall_ret) {
++		case -ERESTART_RESTARTBLOCK:
++		case -ERESTARTNOHAND:
++			regs->syscall_ret = -EINTR;
++			break;
++
++		case -ERESTARTSYS:
++			if (!(ksig->ka.sa.sa_flags & SA_RESTART)) {
++				regs->syscall_ret = -EINTR;
++				break;
++			}
++			fallthrough;
++		case -ERESTARTNOINTR:
++		default:
++                        /* We will actually restart in these cases. */
++			break;
++		}
++	}
++
++	rseq_signal_deliver(ksig, regs);
++
++	/*
++	 * Wasm always uses rt-frames - the libc will have to figure out which
++	 * signature to call the handler with depending on if SA_SIGINFO is set.
++	 */
++	ret = setup_rt_frame(ksig, oldset, regs);
++
++	signal_setup_done(ret, ksig, 0);
++}
++
++void arch_do_signal_or_restart(struct pt_regs *regs)
++{
++	struct ksignal ksig;
++
++	if (get_signal(&ksig)) {
++		handle_signal(&ksig, regs);
++		return;
++	}
++
++	/*
++	 * Restart is handled in the syscall wrapper instead, as Wasm can't
++	 * fiddle with the instruction pointer to re-run the syscall. (Restart
++	 * may be canceled by handle_signal() above if we're handling a signal.)
++	 */
++
++	/*
++	 * If there's no signal to deliver, we just put the saved sigmask
++	 * back.
++	 */
++	restore_saved_sigmask();
++}
+diff --git a/arch/wasm/kernel/smp.c b/arch/wasm/kernel/smp.c
+new file mode 100644
+index 000000000..c105e5259
+--- /dev/null
++++ b/arch/wasm/kernel/smp.c
+@@ -0,0 +1,344 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/clockchips.h>
++#include <linux/completion.h>
++#include <linux/smp.h>
++#include <linux/cpu.h>
++#include <linux/interrupt.h>
++#include <linux/irq_work.h>
++#include <linux/sched/task_stack.h>
++
++#include <asm/time.h>
++#include <asm/wasm.h>
++
++extern unsigned long long wasm_cpu_clock_get_monotonic(void);
++
++static DECLARE_COMPLETION(cpu_running);
++
++#if NR_IRQS > 32
++#error "NR_IRQS too high"
++#endif
++static DEFINE_PER_CPU(unsigned int, raised_irqs);
++
++#define TIMER_NEVER_EXPIRE (-1)
++static DEFINE_PER_CPU(long long, local_timer_expiries) = TIMER_NEVER_EXPIRE;
++
++enum ipi_type {
++	IPI_RESCHEDULE			= 0,
++	IPI_CALL_FUNC			= 1,
++	IPI_RECEIVE_BROADCAST		= 2,
++	IPI_IRQ_WORK			= 3,
++};
++#define IPI_MASK(ipi_type) ((unsigned int)(1U << (int)(ipi_type)))
++static DEFINE_PER_CPU(unsigned int, raised_ipis);
++
++void smp_send_stop(void)
++{
++	unsigned int cpu;
++	unsigned int this_cpu = smp_processor_id();
++
++	for_each_online_cpu(cpu) {
++		if (likely(cpu != this_cpu))
++			wasm_stop_cpu(cpu);
++	}
++}
++
++/* Run for each cpu except the first one, to bring the others up. */
++int __cpu_up(unsigned int cpu, struct task_struct *idle_task)
++{
++	/* Use 16-byte aligned stack to be able to call C functions. */
++	unsigned long stack_start = (unsigned long)idle_task & -16;
++
++	task_thread_info(idle_task)->cpu = cpu;
++
++	/* Needed so that __switch_to does not create a new Wasm task. */
++	task_thread_info(idle_task)->flags &= ~_TIF_NEVER_RUN;
++
++	reinit_completion(&cpu_running);
++
++	 /* Will create a new Wasm instance and call start_secondary(). */
++	wasm_start_cpu(cpu, idle_task, (unsigned long)stack_start);
++
++	/* Wait for CPU to finish startup & mark itself online before return. */
++	wait_for_completion(&cpu_running);
++	return 0;
++}
++
++/*
++ * First thing to run on the secondary CPUs.
++ *
++ * Launched by __cpu_up(), which calls out to the Wasm host. The Wasm host calls
++ * _start_secondary, which sets up the __stack_pointer and then calls us.
++ */
++__visible void start_secondary(void)
++{
++	unsigned int cpu = smp_processor_id();
++
++	notify_cpu_starting(cpu);
++	set_cpu_online(cpu, true);
++
++	enable_percpu_irq(WASM_IRQ_IPI, IRQ_TYPE_NONE);
++
++	/*
++	 * Notify boot CPU that we're up & online and it can safely return
++	 * from __cpu_up(). IPIs need to be enabled (enable_percpu_irq above).
++	 */
++	complete(&cpu_running);
++
++	wasm_clockevent_enable();
++
++	local_irq_enable();
++	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE); /* Enter idle. */
++}
++
++void __init smp_cpus_done(unsigned int max_cpus)
++{
++	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
++}
++
++__visible void raise_interrupt(int cpu, int irq_nr)
++{
++	/*
++	 * Note: this function may be called independent of the kernel, outside
++	 * any CPU or taks. Do not call kernel functions in here!
++	 *
++	 * per_cpu_ptr() is however safe to call (unlike e.g. this_cpu_ptr()).
++	 */
++	unsigned int *raised_irqs_ptr = per_cpu_ptr(&raised_irqs, cpu);
++
++	if (irq_nr >= NR_IRQS)
++		return;
++
++	__atomic_or_fetch(raised_irqs_ptr, 1U << irq_nr, __ATOMIC_SEQ_CST);
++	__builtin_wasm_memory_atomic_notify(raised_irqs_ptr, 1U);
++}
++
++static void send_ipi_message(int cpu, enum ipi_type ipi)
++{
++	unsigned int *raised_ipis_ptr = per_cpu_ptr(&raised_ipis, cpu);
++	__atomic_or_fetch(raised_ipis_ptr, IPI_MASK(ipi), __ATOMIC_SEQ_CST);
++
++	raise_interrupt(cpu, WASM_IRQ_IPI);
++}
++
++void arch_send_call_function_single_ipi(int cpu)
++{
++	/*
++	 * This is not ideal, as these can only be handled when the other CPU is
++	 * idle, but it allows using the kernel completion API when there is
++	 * really only one task running. This is the case when the primary CPU
++	 * is booting up secondaries, waiting for them to wake up and finish
++	 * their part of the boot process. Ideally, we'd get rid of IPI calls.
++	 */
++
++	preempt_disable();
++	send_ipi_message(cpu, IPI_CALL_FUNC);
++	preempt_enable();
++}
++
++void arch_smp_send_reschedule(int cpu)
++{
++	preempt_disable();
++	send_ipi_message(cpu, IPI_RESCHEDULE);
++	preempt_enable();
++}
++
++extern void arch_irq_work_raise(void)
++{
++	/* This is a special IPI sent to ourselves, to break out of context. */
++
++	preempt_disable();
++	send_ipi_message(smp_processor_id(), IPI_IRQ_WORK);
++	preempt_enable();
++}
++
++void tick_broadcast(const struct cpumask *mask)
++{
++	int cpu;
++
++	preempt_disable();
++
++	for_each_cpu(cpu, mask) {
++		send_ipi_message(cpu, IPI_RECEIVE_BROADCAST);
++	}
++
++	preempt_enable();
++}
++
++void wasm_program_timer(unsigned long delta)
++{
++	unsigned long long now;
++	unsigned long long expiry = 0ULL;
++
++	unsigned int *raised_irqs_ptr = this_cpu_ptr(&raised_irqs);
++	long long *expiry_ptr = this_cpu_ptr(&local_timer_expiries);
++
++	if (delta == 0UL) {
++		/* Optimization: set expiry to 0 to immediately expire. */
++	} else {
++		now = wasm_cpu_clock_get_monotonic();
++		expiry = now + (unsigned long long)delta;
++
++		/*
++		 * This overflow will realistically never happen. Calling panic
++		 * instead of returning a non-zero value is warranted, as the
++		 * calling code would otherwise enter an infinite loop...
++		 */
++		if (expiry < now || expiry > (unsigned long long)LLONG_MAX)
++			panic("clockevent expiry too large");
++	}
++
++	__atomic_store_n(expiry_ptr, (long long)expiry, __ATOMIC_SEQ_CST);
++
++	/*
++	 * We notify on raised_irqs since that's what we're waiting on in the
++	 * idle loop. It does not matter if it's still 0 - it will wake anyway.
++	 */
++	__builtin_wasm_memory_atomic_notify(raised_irqs_ptr, 1U);
++}
++
++static irqreturn_t handle_IPI(int irq_nr, void *dev_id)
++{
++	unsigned int *ipi_mask_ptr = dev_id;
++	unsigned int ipi_mask = __atomic_exchange_n(ipi_mask_ptr, 0U,
++						    __ATOMIC_SEQ_CST);
++
++	if (ipi_mask & IPI_MASK(IPI_RECEIVE_BROADCAST)) {
++		/* Useful in NO_HZ_FULL case where no task is running. */
++		tick_receive_broadcast();
++	}
++
++	if (ipi_mask & IPI_MASK(IPI_CALL_FUNC))
++		generic_smp_call_function_interrupt();
++
++	if (ipi_mask & IPI_MASK(IPI_RESCHEDULE))
++		scheduler_ipi();
++
++	if (ipi_mask & IPI_MASK(IPI_IRQ_WORK))
++		irq_work_run();
++
++	return IRQ_HANDLED;
++}
++
++void __init setup_smp_ipi(void)
++{
++	/* This is run on the boot cpu only. We need to enable others later. */
++
++	if (request_percpu_irq(WASM_IRQ_IPI, handle_IPI, "IPI", &raised_ipis))
++		panic("Failed to register IPI IRQ");
++
++	enable_percpu_irq(WASM_IRQ_IPI, IRQ_TYPE_NONE);
++}
++
++void arch_cpu_idle(void)
++{
++	/* Note: The idle task will not migrate so per_cpu state is stable. */
++	unsigned int *raised_irqs_ptr = this_cpu_ptr(&raised_irqs);
++	unsigned int raised_irqs;
++	long long *expiry_ptr = this_cpu_ptr(&local_timer_expiries);
++	long long expiry;
++	long long timeout;
++	unsigned long long now;
++	int irq_nr;
++
++	/*
++	 * This function is supposed to sleep until an interrupt comes in. The
++	 * fact these events can only be detected from the idle task makes these
++	 * "interrupts" unreliable unless there are no tasks on this CPU's
++	 * runqueue at all times. Therefore, one CPU (IRQ_CPU) is dedicated to
++	 * handle interrupts only, no user tasks are allowed to run on it.
++	 *
++	 * Additionally, the clockevent subsystem can wake us, either because it
++	 * wants to program a new timer expiry (arming or re-arming the timer),
++	 * or because an already armed timer is expiring. The clockevent
++	 * subsystem can also request a broadcast - i.e. waking up other CPUs
++	 * from a dedicated broadcast device (living on IRQ_CPU). It's important
++	 * that all CPUs can handle programming of timers, since it's being used
++	 * when the system boots (before NO_HZ_IDLE kicks in). Additionally,
++	 * some kernel functions (e.g. schedule_timeout()) rely on timers to
++	 * wake them up when no task is running on the CPU. These events and
++	 * broadcasts will of course happen in a best-effort fashion on CPUs
++	 * where there are tasks running, as they cannot be stopped.
++	 *
++	 * Wasm-specific wait primitives are used so that the Wasm VM can yield
++	 * to the host OS. In a sense, it's like calling schedule(), but on the
++	 * host. Callling schedule() here would just send us back, busy-waiting.
++	 */
++	for (;;) {
++		expiry = __atomic_load_n(expiry_ptr, __ATOMIC_SEQ_CST);
++
++reprocess:
++		if (expiry > 0LL) {
++			now = wasm_cpu_clock_get_monotonic();
++
++			/* This will realistically never happen. */
++			if (now > (unsigned long long)LLONG_MAX)
++				panic("time is too far into the future");
++
++			if ((long long)now >= expiry)
++				timeout = 0LL;
++			else
++				timeout = expiry - now;
++		} else {
++			/*
++			 * Just like magic:
++			 * If expiry is 0 => timeout becomes 0.
++			 * If expiry is forever => timeout becomes forever.
++			 */
++			timeout = expiry;
++		}
++
++		/* timeout == 0 iff the timer expired this iteration */
++		if (timeout == 0LL) {
++			/*
++			 * It may be tempting to raise the timer interrupt
++			 * already here, but that would not comply with the
++			 * clockevent API, which mandates that re-programming
++			 * of the device also cancels any pending event first.
++			 */
++
++			/* Try resetting the timer to never expire. */
++			if (!__atomic_compare_exchange_n(expiry_ptr, &expiry,
++					TIMER_NEVER_EXPIRE, false,
++					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
++				/*
++				 * Expiry changed under our rug - re-process it.
++				 * This goto is slightly faster than "continue;"
++				 * as the compare-and-swap above will already
++				 * have loaded the new expiry value on failure.
++				*/
++				goto reprocess;
++			}
++
++			raise_interrupt(smp_processor_id(), WASM_IRQ_TIMER);
++
++			if (smp_processor_id() != IRQ_CPU)
++				timeout = TIMER_NEVER_EXPIRE;
++		}
++
++		if (timeout != 0LL)
++			__builtin_wasm_memory_atomic_wait32(raised_irqs_ptr, 0U,
++							    timeout);
++
++		raised_irqs = __atomic_exchange_n(raised_irqs_ptr, 0U,
++						  __ATOMIC_SEQ_CST);
++
++		/*
++		 * In the case of some raised_irqs, handle it, then we will come
++		 * back here in a future invocation of this function. This
++		 * function retuns so that that idle framework can do its job,
++		 * for example if TIF_NEEDS_RESCHED is set by some IPI.
++		 */
++		if (raised_irqs)
++			break;
++	}
++
++	irq_nr = 0;
++	while (raised_irqs) {
++		if (raised_irqs & 1U)
++			do_irq_stacked(irq_nr);
++
++		raised_irqs >>= 1;
++		++irq_nr;
++	}
++}
+diff --git a/arch/wasm/kernel/stack.c b/arch/wasm/kernel/stack.c
+new file mode 100644
+index 000000000..a0f1c314b
+--- /dev/null
++++ b/arch/wasm/kernel/stack.c
+@@ -0,0 +1,26 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/kasan.h>
++#include <linux/preempt.h>
++#include <linux/rcupdate.h>
++#include <linux/spinlock.h>
++#include <linux/gfp.h>
++#include <linux/mm.h>
++
++struct task_struct *alloc_task_struct_node(int node)
++{
++	struct page *page =
++		alloc_pages_node(node, THREADINFO_GFP, THREAD_SIZE_ORDER);
++
++	if (unlikely(!page))
++		return NULL;
++
++	return (struct task_struct *)((unsigned long)page_address(page) +
++		ALIGN_DOWN(THREAD_SIZE - sizeof(struct task_struct),
++			   L1_CACHE_BYTES));
++}
++
++void free_task_struct(struct task_struct *tsk)
++{
++	free_pages((unsigned long)tsk & THREAD_MASK, THREAD_SIZE_ORDER);
++}
+diff --git a/arch/wasm/kernel/sys_wasm.c b/arch/wasm/kernel/sys_wasm.c
+new file mode 100644
+index 000000000..c3b2404e0
+--- /dev/null
++++ b/arch/wasm/kernel/sys_wasm.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/syscalls.h>
++
++// SYS_mmap2()
++SYSCALL_DEFINE6(mmap2, unsigned long, addr, unsigned long, len,
++	unsigned long, prot, unsigned long, flags, unsigned long, fd,
++	unsigned long, pgoff)
++{
++	/*
++	 * The "page size" for mmap2 should always be 4K (shift 12). Some
++	 * architectures use their native page size or whatnot, and that's why
++	 * this syscall exists in its own version for each architecture...
++	 *
++	 * Some architectures check the alignment, but that's out of spec.
++	 */
++	return ksys_mmap_pgoff(addr, len, prot, flags, fd,
++			       pgoff >> (PAGE_SHIFT - 12));
++}
+diff --git a/arch/wasm/kernel/syscall_table.c b/arch/wasm/kernel/syscall_table.c
+new file mode 100644
+index 000000000..3c4e9b5e6
+--- /dev/null
++++ b/arch/wasm/kernel/syscall_table.c
+@@ -0,0 +1,37 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/syscalls.h>
++#include <asm-generic/syscalls.h>
++#include <asm/syscall.h>
++
++/*
++ * We should probably use some soft variant of CONFIG_COMPAT yet to be invented.
++ * TODO: This hack should be replaced with proper selection of compat syscalls!
++ */
++
++ static long sys_truncate64_fixup(const char __user *pathname,
++				  unsigned long length_lo,
++				  unsigned long length_hi)
++{
++	return sys_truncate64(pathname,
++		((unsigned long long)length_hi << 32) | length_lo);
++}
++
++static long sys_ftruncate64_fixup(unsigned int fd,
++				  unsigned long length_lo,
++				  unsigned long length_hi)
++{
++	return sys_ftruncate64(fd,
++		((unsigned long long)length_hi << 32) | length_lo);
++}
++
++void (* const sys_call_table[__NR_syscalls])(void) = {
++	[0 ... __NR_syscalls-1] = (void (*)(void))sys_ni_syscall,
++
++#undef __SYSCALL
++#define __SYSCALL(nr, call) [nr] = (void (*)(void))(call),
++#include <asm/unistd.h>
++
++	[__NR_truncate64] = (void (*)(void))sys_truncate64_fixup,
++	[__NR_ftruncate64] = (void (*)(void))sys_ftruncate64_fixup,
++};
+diff --git a/arch/wasm/kernel/time.c b/arch/wasm/kernel/time.c
+new file mode 100644
+index 000000000..af65bc3f0
+--- /dev/null
++++ b/arch/wasm/kernel/time.c
+@@ -0,0 +1,88 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/clocksource.h>
++#include <linux/clockchips.h>
++#include <linux/interrupt.h>
++
++#include <asm/irq.h>
++#include <asm/smp.h>
++#include <asm/time.h>
++
++extern unsigned long long wasm_cpu_clock_get_monotonic(void);
++
++/* Wasm clock source: derived from Wasm host cpu clock (monotonic). */
++
++static unsigned long long wasm_clocksource_read(struct clocksource *cs)
++{
++	return wasm_cpu_clock_get_monotonic();
++}
++
++static struct clocksource wasm_clocksource = {
++	.name = "wasm_cpu_clock",
++	.flags = CLOCK_SOURCE_IS_CONTINUOUS,
++	.rating = 200,
++	.read = wasm_clocksource_read,
++	.mask = CLOCKSOURCE_MASK(64),
++};
++
++static int __init wasm_clocksource_init(void)
++{
++	return clocksource_register_khz(&wasm_clocksource, 1000000U /* 1 ns */);
++}
++
++/* Wasm clock event: derived from Wasm atomic wait timeouts (in smp.c). */
++
++static int wasm_clockevent_set_next_event(unsigned long delta,
++	struct clock_event_device *dev)
++{
++	wasm_program_timer(delta);
++	return 0;
++}
++
++static DEFINE_PER_CPU(struct clock_event_device, wasm_clockevents) = {
++	.name			= "wasm_timer",
++	.features		= CLOCK_EVT_FEAT_ONESHOT,
++	.rating			= 300,
++	.set_next_event		= wasm_clockevent_set_next_event,
++};
++
++static irqreturn_t __irq_entry wasm_timer_interrupt(int irq_nr, void *dev_id)
++{
++	struct clock_event_device *ce_dev = dev_id;
++
++	ce_dev->event_handler(ce_dev);
++
++	return IRQ_HANDLED;
++}
++
++static int __init wasm_clockevent_init(void)
++{
++	/* Requested here, enabled in wasm_clockevent_enable() for each cpu. */
++	return request_percpu_irq(WASM_IRQ_TIMER, wasm_timer_interrupt,
++				  "wasm-timer", &wasm_clockevents);
++}
++
++void wasm_clockevent_enable(void)
++{
++	struct clock_event_device *ce_dev = this_cpu_ptr(&wasm_clockevents);
++
++	ce_dev->cpumask = cpumask_of(smp_processor_id());
++	ce_dev->irq = WASM_IRQ_TIMER;
++	clockevents_config_and_register(ce_dev, 1000000000, 0, ~0U);
++
++	enable_percpu_irq(WASM_IRQ_TIMER, IRQ_TYPE_NONE);
++}
++
++/* Called very early in the boot, only CPU 0 is up so far! */
++void __init time_init(void)
++{
++	/* Time is an illusion and yet here we are... */
++	if (wasm_clocksource_init())
++		panic("Failed to initialize Wasm clocksource");
++
++	if (wasm_clockevent_init())
++		panic("Failed to initialize Wasm clock_event");
++
++	/* Only for CPU 0, secondaries will be enabled as they come up. */
++	wasm_clockevent_enable();
++}
+diff --git a/arch/wasm/kernel/traps.c b/arch/wasm/kernel/traps.c
+new file mode 100644
+index 000000000..928a2338a
+--- /dev/null
++++ b/arch/wasm/kernel/traps.c
+@@ -0,0 +1,207 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/entry-common.h>
++#include <linux/syscalls.h>
++#include <asm/cpuflags.h>
++#include <asm/processor.h>
++#include <asm/ptrace.h>
++#include <asm/syscall.h>
++
++static inline void exception_enter(struct pt_regs *regs)
++{
++	unsigned long *cpuflags = this_cpu_ptr(&wasm_cpuflags);
++
++	regs->cpuflags = *cpuflags;
++	*cpuflags &= ~(BIT(CPUFLAGS_USER_MODE) | BIT(CPUFLAGS_INTERRUPT));
++}
++
++static inline void exception_exit(struct pt_regs *regs)
++{
++	unsigned long *cpuflags = this_cpu_ptr(&wasm_cpuflags);
++
++	*cpuflags = regs->cpuflags;
++}
++
++#define WASM_SYSCALL_N(x, args, cast_args, ...)					\
++	__visible long __wasm_syscall_##x args					\
++	{									\
++		long syscall = n;						\
++		struct pt_regs *regs = current_pt_regs();			\
++		void (*fn)(void);						\
++		long syscall_args[] = {__MAP(x,__SC_ARGS,__VA_ARGS__)};		\
++		bool restart;							\
++										\
++		exception_enter(regs);						\
++										\
++		regs->syscall_nr = n;						\
++		memcpy(regs->syscall_args, syscall_args, sizeof(syscall_args));	\
++		regs->syscall_ret = -ENOSYS;					\
++										\
++		if (user_mode(regs)) {						\
++			do {							\
++				syscall = syscall_enter_from_user_mode(		\
++					regs, syscall);				\
++										\
++				if (syscall >= 0 && syscall < __NR_syscalls) {	\
++					fn = sys_call_table[syscall];		\
++					if (syscall == __NR_restart_syscall) {	\
++						regs->syscall_ret = sys_restart_syscall(); \
++					} else if (fn != (void (*)(void))sys_ni_syscall) { \
++						regs->syscall_ret = ((long (*)(cast_args)) \
++							fn)(__MAP(x,__SC_ARGS,__VA_ARGS__)); \
++					}					\
++				}						\
++										\
++				syscall_exit_to_user_mode(regs);		\
++										\
++				switch (regs->syscall_ret) {			\
++				case -ERESTART_RESTARTBLOCK:			\
++					syscall = __NR_restart_syscall;		\
++					fallthrough;				\
++				case -ERESTARTNOHAND:				\
++				case -ERESTARTSYS:				\
++				case -ERESTARTNOINTR:				\
++					restart = true;				\
++					break;					\
++				default:					\
++					restart = false;			\
++				}						\
++			} while (restart);					\
++		} else {							\
++			irqentry_state_t state = irqentry_nmi_enter(regs);	\
++										\
++			panic("Syscall called when in kernel mode");		\
++										\
++			irqentry_nmi_exit(regs, state);				\
++		}								\
++										\
++		exception_exit(regs);						\
++										\
++		return regs->syscall_ret;					\
++	}
++#define WASM_SYSCALL(x, ...) WASM_SYSCALL_N(					\
++	x,									\
++	(long n, __MAP(x,__SC_DECL,__VA_ARGS__)),				\
++	__MAP(x,__SC_DECL,__VA_ARGS__),						\
++	__VA_ARGS__)
++
++WASM_SYSCALL_N(0, (long n), void)
++WASM_SYSCALL(1, long, a)
++WASM_SYSCALL(2, long, a, long, b)
++WASM_SYSCALL(3, long, a, long, b, long, c)
++WASM_SYSCALL(4, long, a, long, b, long, c, long, d)
++WASM_SYSCALL(5, long, a, long, b, long, c, long, d, long, e)
++WASM_SYSCALL(6, long, a, long, b, long, c, long, d, long, e, long, f)
++
++/*
++ * Final check before syscall return (after pt_regs have been restored).
++ *
++ * If exec() was called, we reload user program code. If there is a signal
++ * handler to call, we call it. (Both will not happen, as exec blocks handlers.)
++ *
++ * Returns the direction of program flow:
++ * -1 if exec() was called and the Wasm host should reload the user program.
++ *  1 if a signal was delivered => the Wasm host should start signal handling.
++ *  2 if a sigreturn happened => the Wasm host should cancel signal handling.
++ *  3 if a signal was delivered AND a sigreturn (of an older signal handler)
++ *    happened => the Wasm host should first handle the new signal (stacked),
++ *    then cancel the old signal handler (after the stacked signal returns).
++ *  0 if nothing should be done and the syscall should return normally.
++ * In the case of exec(), the syscall should never fully return to the caller.
++ */
++int user_mode_tail(void)
++{
++	struct thread_info *thread_info = current_thread_info();
++	const bool reload = thread_info->flags & _TIF_RELOAD_PROGRAM;
++	const bool deliver = thread_info->flags & _TIF_DELIVER_SIGNAL;
++	const bool retn = thread_info->flags & _TIF_RETURN_SIGNAL;
++
++	if (reload) {
++		BUG_ON(deliver);
++		BUG_ON(retn);
++
++		thread_info->flags &= ~_TIF_RELOAD_PROGRAM;
++		return -1;
++	} else if (deliver || retn) {
++		BUG_ON(reload);
++
++		if (deliver)
++			thread_info->flags &= ~_TIF_DELIVER_SIGNAL;
++
++		if (retn)
++			thread_info->flags &= ~_TIF_RETURN_SIGNAL;
++
++		return (deliver ? 1 : 0) | (retn ? 2 : 0);
++	}
++
++	return 0;
++}
++
++static void do_irq(struct pt_regs *regs, int irq_nr)
++{
++	struct pt_regs *old_regs;
++	irqentry_state_t state = irqentry_enter(regs);
++
++	irq_enter_rcu();
++	old_regs = set_irq_regs(regs);
++	generic_handle_irq(irq_nr);
++	set_irq_regs(old_regs);
++	irq_exit_rcu();
++
++	irqentry_exit(regs, state);
++}
++
++void do_irq_stacked(int irq_nr)
++{
++	/*
++	 * This is a bit odd but somewhere in this function's frame we start an
++	 * exception frame. Exactly where the boundary is does not matter in
++	 * practice, some data may end up on either "wrong" end of the boundary.
++	 */
++	struct pt_regs regs = PT_REGS_INIT;
++	regs.stack_pointer = (unsigned long)&regs + sizeof(regs);
++	exception_enter(&regs);
++
++	do_irq(&regs, irq_nr);
++
++	exception_exit(&regs);
++}
++
++/* Do an exception. There are currently no exception types in Wasm. */
++static void do_exception(struct pt_regs *regs)
++{
++	/*
++	 * The host is currently responsible for reporting the full error. We
++	 * just mark this error as SIGILL but it could be anything.
++	 */
++	if (user_mode(regs)) {
++		irqentry_enter_from_user_mode(regs);
++		force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)0U);
++		irqentry_exit_to_user_mode(regs);
++	} else {
++		irqentry_state_t state = irqentry_nmi_enter(regs);
++		make_task_dead(SIGILL);
++		irqentry_nmi_exit(regs, state);
++	}
++}
++
++/*
++* This function is called from the host when things break either in kernel code
++* or user code. That code will never continue to execute - we have to report the
++* error and try to recover in the best way possible.
++*/
++__visible void raise_exception(void)
++{
++	/*
++	 * This is a bit odd but somewhere in this function's frame we start an
++	 * exception frame. Exactly where the boundary is does not matter in
++	 * practice, some data may end up on either "wrong" end of the boundary.
++	 */
++	struct pt_regs regs = PT_REGS_INIT;
++	regs.stack_pointer = (unsigned long)&regs + sizeof(regs);
++	exception_enter(&regs);
++
++	do_exception(&regs);
++
++	exception_exit(&regs);
++}
+diff --git a/arch/wasm/kernel/vmlinux.lds.S b/arch/wasm/kernel/vmlinux.lds.S
+new file mode 100644
+index 000000000..1ae0641dc
+--- /dev/null
++++ b/arch/wasm/kernel/vmlinux.lds.S
+@@ -0,0 +1,65 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <asm/asm-offsets.h>
++
++/* Put init_task after init_stack in the thread stack. */
++#define INIT_TASK_OFFSET THREAD_TASK_STRUCT_OFFSET
++
++#include <asm/vmlinux.lds.h>
++#include <asm/thread_info.h>
++#include <asm/cache.h>
++#include <asm/page.h>
++
++SECTIONS
++{
++	/* To refer to addres 0 in assembly, but as a relocation. */
++	zeroptr = 0;
++
++	/* Begin 1 Wasm page (65k) in so that we can dodge null-pointer. */
++	. = 0x10000;
++
++	__init_begin = .;
++	HEAD_TEXT_SECTION
++	INIT_TEXT_SECTION(PAGE_SIZE)
++	INIT_DATA_SECTION(16)
++	PERCPU_SECTION(L1_CACHE_BYTES)
++	__init_end = .;
++
++	.text : {
++		_text = .;
++		_stext = .;
++		TEXT_TEXT
++		SCHED_TEXT
++		LOCK_TEXT
++		KPROBES_TEXT
++		ENTRY_TEXT
++		IRQENTRY_TEXT
++		SOFTIRQENTRY_TEXT
++		_etext = .;
++	}
++
++	_sdata = .;
++	RO_DATA(PAGE_SIZE)
++	RW_DATA(L1_CACHE_BYTES, PAGE_SIZE, THREAD_SIZE)
++	_edata = .;
++
++	EXCEPTION_TABLE(16)
++
++	BSS_SECTION(0, 0, 0)
++	_end = .;
++
++/*
++	Not supported by wasm-ld linker script hack:
++	STABS_DEBUG
++	DWARF_DEBUG
++	ELF_DETAILS
++*/
++
++	DISCARDS		// must be the last
++}
++
++/*
++ * Due to the way linker scripts are implemented in wasm-ld, any symbol-alias
++ * assignments have to happen after the symbol has been placed into the output.
++ */
++jiffies = jiffies_64;
+diff --git a/arch/wasm/lib/Makefile b/arch/wasm/lib/Makefile
+new file mode 100644
+index 000000000..8e4e35012
+--- /dev/null
++++ b/arch/wasm/lib/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++lib-y += delay.o
+diff --git a/arch/wasm/lib/delay.c b/arch/wasm/lib/delay.c
+new file mode 100644
+index 000000000..4db76b463
+--- /dev/null
++++ b/arch/wasm/lib/delay.c
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/delay.h>
++
++void calibrate_delay(void)
++{
++	/* Wasm convention: lpj = nanoseconds per Hz */
++	loops_per_jiffy = 1000000000 / HZ;
++}
++
++void __delay(unsigned long cycles)
++{
++	unsigned int dummy = 0U;
++
++	mb();
++	__builtin_wasm_memory_atomic_wait32(&dummy, 0U, (long long)cycles);
++	mb();
++}
++EXPORT_SYMBOL(__delay);
+diff --git a/arch/wasm/mm/Makefile b/arch/wasm/mm/Makefile
+new file mode 100644
+index 000000000..661744a43
+--- /dev/null
++++ b/arch/wasm/mm/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
++obj-y += init.o
+diff --git a/arch/wasm/mm/init.c b/arch/wasm/mm/init.c
+new file mode 100644
+index 000000000..5469d62e5
+--- /dev/null
++++ b/arch/wasm/mm/init.c
+@@ -0,0 +1,21 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <linux/linkage.h>
++#include <linux/init.h>
++#include <linux/memblock.h>
++#include <asm/page.h>
++
++unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_bss;
++EXPORT_SYMBOL(empty_zero_page);
++
++void __init mem_init(void)
++{
++	/* These are needed by some code to know which pages are valid. */
++	high_memory = (void *)memory_end;
++	max_pfn = PFN_DOWN(memory_end);
++	min_low_pfn = PFN_DOWN(memory_start);
++	max_low_pfn = max_pfn;
++	set_max_mapnr(max_low_pfn - min_low_pfn);
++
++	memblock_free_all();
++}
+diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
+index b331a3947..86d5a3ee4 100644
+--- a/include/asm-generic/vmlinux.lds.h
++++ b/include/asm-generic/vmlinux.lds.h
+@@ -404,11 +404,15 @@
+ 	. = ALIGN(align);						\
+ 	*(.data..cacheline_aligned)
+ 
++#ifndef INIT_TASK_OFFSET
++#define INIT_TASK_OFFSET (0)
++#endif
+ #define INIT_TASK_DATA(align)						\
+ 	. = ALIGN(align);						\
+ 	__start_init_task = .;						\
+ 	init_thread_union = .;						\
+ 	init_stack = .;							\
++	. = . + INIT_TASK_OFFSET;					\
+ 	KEEP(*(.data..init_task))					\
+ 	KEEP(*(.data..init_thread_info))				\
+ 	. = __start_init_task + THREAD_SIZE;				\
+diff --git a/include/uapi/linux/audit.h b/include/uapi/linux/audit.h
+index d676ed2b2..f0aee0f22 100644
+--- a/include/uapi/linux/audit.h
++++ b/include/uapi/linux/audit.h
+@@ -437,6 +437,7 @@ enum {
+ #define AUDIT_ARCH_TILEGX32	(EM_TILEGX|__AUDIT_ARCH_LE)
+ #define AUDIT_ARCH_TILEPRO	(EM_TILEPRO|__AUDIT_ARCH_LE)
+ #define AUDIT_ARCH_UNICORE	(EM_UNICORE|__AUDIT_ARCH_LE)
++#define AUDIT_ARCH_WASM32	(EM_WASM32|__AUDIT_ARCH_LE)
+ #define AUDIT_ARCH_X86_64	(EM_X86_64|__AUDIT_ARCH_64BIT|__AUDIT_ARCH_LE)
+ #define AUDIT_ARCH_XTENSA	(EM_XTENSA)
+ #define AUDIT_ARCH_LOONGARCH32	(EM_LOONGARCH|__AUDIT_ARCH_LE)
+diff --git a/include/uapi/linux/elf-em.h b/include/uapi/linux/elf-em.h
+index ef38c2bc5..aaca659a7 100644
+--- a/include/uapi/linux/elf-em.h
++++ b/include/uapi/linux/elf-em.h
+@@ -52,6 +52,7 @@
+ #define EM_BPF		247	/* Linux BPF - in-kernel virtual machine */
+ #define EM_CSKY		252	/* C-SKY */
+ #define EM_LOONGARCH	258	/* LoongArch */
++#define EM_WASM32	264	/* WebAssembly wasm32 */
+ #define EM_FRV		0x5441	/* Fujitsu FR-V */
+ 
+ /*
+diff --git a/scripts/Makefile.clang b/scripts/Makefile.clang
+index 058a4c0f8..4253c0177 100644
+--- a/scripts/Makefile.clang
++++ b/scripts/Makefile.clang
+@@ -9,6 +9,7 @@ CLANG_TARGET_FLAGS_mips		:= mipsel-linux-gnu
+ CLANG_TARGET_FLAGS_powerpc	:= powerpc64le-linux-gnu
+ CLANG_TARGET_FLAGS_riscv	:= riscv64-linux-gnu
+ CLANG_TARGET_FLAGS_s390		:= s390x-linux-gnu
++CLANG_TARGET_FLAGS_wasm		:= wasm32-unknown-unknown
+ CLANG_TARGET_FLAGS_x86		:= x86_64-linux-gnu
+ CLANG_TARGET_FLAGS_um		:= $(CLANG_TARGET_FLAGS_$(SUBARCH))
+ CLANG_TARGET_FLAGS		:= $(CLANG_TARGET_FLAGS_$(SRCARCH))
+diff --git a/scripts/Makefile.vmlinux_o b/scripts/Makefile.vmlinux_o
+index 0edfdb403..9fdae5e6d 100644
+--- a/scripts/Makefile.vmlinux_o
++++ b/scripts/Makefile.vmlinux_o
+@@ -44,12 +44,20 @@ objtool-args = $(vmlinux-objtool-args-y) --link
+ # Link of vmlinux.o used for section mismatch analysis
+ # ---------------------------------------------------------------------------
+ 
++ifneq ($(ARCH),wasm)
++	circular-resolved-libs = -start-group $(KBUILD_VMLINUX_LIBS) --end-group
++else
++	# LLVM wasm-ld does not support --start-group and --end-group. This is
++	# not as good as grouping them, but it might just work!
++	circular-resolved-libs = $(KBUILD_VMLINUX_LIBS) $(KBUILD_VMLINUX_LIBS)
++endif
++
+ quiet_cmd_ld_vmlinux.o = LD      $@
+       cmd_ld_vmlinux.o = \
+ 	$(LD) ${KBUILD_LDFLAGS} -r -o $@ \
+ 	$(addprefix -T , $(initcalls-lds)) \
+ 	--whole-archive vmlinux.a --no-whole-archive \
+-	--start-group $(KBUILD_VMLINUX_LIBS) --end-group \
++	$(circular-resolved-libs) \
+ 	$(cmd_objtool)
+ 
+ define rule_ld_vmlinux.o
+diff --git a/scripts/link-vmlinux.sh b/scripts/link-vmlinux.sh
+index a432b171b..023eed789 100755
+--- a/scripts/link-vmlinux.sh
++++ b/scripts/link-vmlinux.sh
+@@ -66,7 +66,15 @@ vmlinux_link()
+ 		libs=
+ 	else
+ 		objs=vmlinux.a
+-		libs="${KBUILD_VMLINUX_LIBS}"
++
++		if [ "${ARCH}" = "wasm" ]; then
++			# LLVM wasm-ld does not support --start-group and
++			# --end-group. This is not as good as grouping them, but
++			# it might just work!
++			libs="${KBUILD_VMLINUX_LIBS} ${KBUILD_VMLINUX_LIBS}"
++		else
++			libs="${wl}--start-group ${KBUILD_VMLINUX_LIBS} ${wl}--end-group"
++		fi
+ 	fi
+ 
+ 	if is_enabled CONFIG_MODULES; then
+@@ -87,6 +95,16 @@ vmlinux_link()
+ 		ldlibs=
+ 	fi
+ 
++	# wasm-ld has very simple linker scripts and needs some extra setup.
++	if [ "${ARCH}" = "wasm" ]; then
++		ldflags="${ldflags} --no-entry --error-limit=0"
++		ldflags="${ldflags} --export-all --export-table"
++		ldflags="${ldflags} --no-merge-data-segments -no-gc-sections"
++		ldflags="${ldflags} --import-memory --shared-memory"
++		ldflags="${ldflags} --max-memory=$((1<<32))"
++		ldflags="${ldflags} --import-undefined"
++	fi
++
+ 	ldflags="${ldflags} ${wl}--script=${objtree}/${KBUILD_LDS}"
+ 
+ 	# The kallsyms linking does not need debug symbols included.
+@@ -100,8 +118,7 @@ vmlinux_link()
+ 
+ 	${ld} ${ldflags} -o ${output}					\
+ 		${wl}--whole-archive ${objs} ${wl}--no-whole-archive	\
+-		${wl}--start-group ${libs} ${wl}--end-group		\
+-		$@ ${ldlibs}
++		${libs} $@ ${ldlibs}
+ }
+ 
+ # generate .BTF typeinfo from DWARF debuginfo
+-- 
+2.25.1
+

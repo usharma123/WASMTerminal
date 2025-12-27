@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+
+<head>
+  <meta charset="utf-8">
+  <!-- SPDX-License-Identifier: GPL-2.0-only -->
+
+  <script>
+    // Append ?v=-1 to the URL to cache-bust smug browsers that ignore your Cache-Control headers.
+    let wasm_linux_version = parseInt(new URLSearchParams(document.location.search).get("v") || 1);
+    wasm_linux_version = (wasm_linux_version < 0) ? (+new Date()) : wasm_linux_version;
+    document.write("<l" + "ink rel=\"stylesheet\" href=\"bright.css?v=" + wasm_linux_version + "\">");
+    document.write("<l" + "ink rel=\"stylesheet\" href=\"xterm.css?v=" + wasm_linux_version + "\">");
+    document.write("<scr" + "ipt src=\"linux.js?v=" + wasm_linux_version + "\"></scr" + "ipt>");
+    document.write("<scr" + "ipt src=\"xterm.js?v=" + wasm_linux_version + "\"></scr" + "ipt>");
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const term = new Terminal({ theme: { background: "#013425", foreground: "#FFC012" } });
+      term.open(document.getElementById("terminal"));
+
+      const log = (text) => term.write(("\x1B[2m" + text + "\x1B[0m\n").replaceAll("\n", "\r\n"));
+      const console_write = (data) => term.write(data);  // Pre-decoded UTF-8 data.
+
+      // This is needed for SharedArrayBuffer on modern browsers.
+      if (!window.crossOriginIsolated) {
+        log("Error: Server did not set correct cross-origin-isolated headers.");
+        // Keep going though, it might work in some environments...
+      }
+
+      try {
+        const worker_url = "linux-worker.js?v=" + wasm_linux_version;
+
+        const vmlinux = await WebAssembly.compileStreaming(fetch("vmlinux.wasm?v=" + wasm_linux_version));
+
+        // Boot on 3 CPUs, we will bring up more later on as needed.
+        const boot_cmdline =
+          "maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0";
+
+        const initrd_request = await fetch("initramfs.cpio.gz?v=" + wasm_linux_version);
+        if (!initrd_request.ok) {
+          throw new Error("Failed to fetch initrd from server, status: " + initrd_request.status);
+        }
+        const initrd = await initrd_request.arrayBuffer();
+
+        const os = await linux(worker_url, vmlinux, boot_cmdline, initrd, log, console_write);
+        term.onData(data => os.key_input(data));
+      } catch (error) {
+        log("Linux/Wasm failed with (" + error.name + "): " + error.message + "\n" + error.stack);
+        throw error;
+      }
+    }, false);
+  </script>
+</head>
+
+<body>
+  <h1>Linux/Wasm</h1>
+  <div id="terminal" tabindex="0"></div>
+  <pre>
+Examples: ls          watch uptime              head /proc/cpuinfo
+          pwd         usleep 1234567            ps | grep kthreadd
+          top         vi file.txt               find /proc -name cmdline -maxdepth 2
+          mount       exec sh                   echo Hello &gt;&gt; world && cat world
+          iostat      strings /bin/busybox      grep "Cpus_allowed_list" &lt; /proc/self/status</pre>
+  <article>
+    <p>
+      The console takes over <kbd>Ctrl</kbd> + <kbd>C</kbd> etc. Depending on your platform and browser, adding
+      <kbd>Shift</kbd> to the combo may work. Using <kbd>Ctrl</kbd> + <kbd>Insert</kbd> for copy and <kbd>Shift</kbd> +
+      <kbd>Insert</kbd> for paste may also work. Right-clicking and using the context menu should also work.
+    </p>
+    <p>
+      A small Q&A follows. As always, if you are unsure about how some piece of software works, take a look at the
+      <a href="https://github.com/joelseverin/linux-wasm/tree/master/patches" target="_blank">source code</a>!
+    </p>
+
+    <h2>What am I watching?</h2>
+    <p>
+      The Linux kernel, booting in your browser, powered by <a href="https://webassembly.org/"
+        target="_blank">WebAssembly (Wasm)</a>.
+      The included programs (shell and standard commands) are provided by BusyBox, backed by a musl libc implementation.
+      The terminal emulator is provided by Xterm.js.
+    </p>
+    <p>
+      <strong>This is a proof-of-concept to get a discussion started, not a stable nor a secure system.</strong> Many
+      workarounds (hacks) are needed to pull this thing off. Maybe this <em>tech demo</em> can steer development of
+      Wasm, Linux, LLVM and the other components needed onto a path where a Wasm-powered Linux system can be supported
+      in a production setting, but there is a long road ahead and all platforms need to change in fundamental ways for
+      that to happen in a convincing way. Not to mention the human aspect - do all stakeholders even <em>want</em> to
+      support such an odd platform as Wasm, or the niche use cases it currently caters?
+    </p>
+
+    <h2>Known bugs</h2>
+    <p>
+      Sometimes the whole system will lock up. Reloading the page will reboot it. To debug further, the Web Console
+      might come in handy (<kbd>F12</kbd> in most browsers). I recommend Chromium-based browsers over Firefox, as the
+      latter does not work very well when debugging Wasm projects of this size. Just be aware that things run slower
+      while debugging. I'm still working on the instability issues but wanted to release a first version now that it
+      boots and runs basic commands! Most crashes I have seen are typically originating from one of these root causes:
+    </p>
+    <ul>
+      <li>
+        There seems to be some kind of stray memory write that sometimes corrupts key data structures, when they are
+        allocated in certain places (which is timing dependent). Or at least there seemed to be. After overhauling the
+        kernel stack and task_struct layout and allocation, I have not seen it anymore. Afaik, current tooling does not
+        allow setting breakpoints on memory writes, making this a very hard bug to track down. If the bug still exists,
+        it manifests itself by:
+        <ul>
+          <li>
+            dup_fd unaligned access: the old file descriptor table is corrupted. Haven't seen this one in a while.
+          </li>
+          <li>
+            wq_worker_comm: the workqueue worker's pool pointer becomes -1. (Band-aid workaround in hack patch applied.)
+          </li>
+          <li>
+            rcu_os: did not dig too deep into this one yet but it seems a function pointer reference becomes corrupted.
+          </li>
+        </ul>
+      </li>
+      <li>
+        The console freezes after 5 minutes: does not seem to be a jiffies wrap bug (changing INITIAL_JIFFIES still
+        triggers the bug 5 min plus 1 or 2 seconds after boot). The timer wheel backing schedule_timeout() seems to
+        break in an odd way. This bug does not always happen and only affects the hvc console input - user programs
+        can still run in the background and keep producing output. Maybe this is related to some NO_HZ corner case.
+      </li>
+      <li>
+        longjmp() does not work: this is not supported yet (but could be). setjmp/sigsetjmp() are allowed but no-ops.
+        Most BusyBox programs have been modified to do error handling without setjmp. The only program not fixed should
+        be nc (netcat), which uses setjmp and signals to do timeouts. In any case, true networking is for obvious
+        reasons forbidden in Wasm.
+      </li>
+      <li>
+        vfork() does not work: it would work with setjmp/longjmp() support, but it's not supported yet. See below on
+        using clone() with CLONE_VFORK instead. The development effort to replace vfork() with clone() is about 5
+        minutes per call site and most interesting places in BusyBox have already been patched.
+      </li>
+    </ul>
+
+    <h2>How does this work?</h2>
+    <p>
+      Wasm is similar to every other arch in Linux, but also different. One important difference is that there is no way
+      to suspend execution of a task. There is a way around this though: Linux supports up to 8k CPUs (or possibly
+      more...). We can just spin up a new CPU dedicated to each user task (process/thread) and never preempt it. Each
+      task is backed by a Web Worker, which is in practice backed by a thread in the host OS (through the WebAssembly
+      implementation). This essentially offloads the actual scheduling of each task in the Linux/Wasm guest to the host
+      OS scheduler, as the guest kernel has been tricked to have a lot of CPUs that ping-pong between executing a single
+      user task and their own idle tasks (and some kthreads now and then - as we know they play nice and won't hog the
+      CPU, they can execute for a brief moment on any CPU in the guest system).
+    </p>
+    <p>
+      No graceful preemption also means that interrupts or signals don't work fully. There is some support for
+      interrupts on a dedicated CPU. It is used to deliver timing interrupts and IPIs that control advanced scheduling.
+      Signal handlers only work if the user process plays nice: if all threads never do any syscalls (i.e. hog the CPU),
+      the signal can never be delivered. Thankfully, most programs play nice, and those that don't should be easy to fix
+      one way or another (e.g. spawn a thread that sits idle and receives signals, and cooperates with the main thread).
+    </p>
+
+    <h2>What are the limitations?</h2>
+    <p>
+      As mentioned above, no interruptions of tasks are possible. No MMU, every process and the kernel lives in the same
+      address space. Wasm is a more or less a strict Harvard architecture, where code can be loaded but not modified at
+      runtime. JIT compilation could in theory still work, you would just need to compile the code before launching it,
+      but no runtime patching would be allowed (for example, the <i>jump label</i> kernel feature would not work well).
+    </p>
+    <p>
+      Wasm is an evolving specification and new extensions are continuously being added. While there are some quite
+      limiting aspects of the standard today, things improve all the time. Some of the hacks employed to make this demo
+      work today may be unnecessary in the Wasm version of tomorrow.
+    </p>
+
+    <h2>Is this optimized?</h2>
+    <p>
+      No. There has more or less been no optimization of the current build. In fact, de-optimizations have been applied
+      to enable debugging. There are many optimizations waiting to be done which could make the whole thing boot and
+      run even faster. Perhaps the largest performance saver could, however, be to boot once and then only download a
+      (compressed) and pre-booted image to end users. As Wasm is completely sandboxed and not dependent on any hardware
+      at boot, such a "hibernated" or "snapshot" image would be able to launch instantly.
+    </p>
+    <p>
+      Booting each of the secondary CPUs is also done in serial order right now, which takes a lot of time and could
+      probably be done in parallel. I have not profiled the code but I suspect the reason it takes a long time is the
+      maintenance on the JavaScript side, because the code that runs in Wasm when booting a CPU is rather slim to begin
+      with.
+    </p>
+    <p>
+      The current host implementation handles a lot of things with postMessage() between workers and the main thread.
+      This seems to add quite some overhead. Perhaps it would be possible to speed this up by using Atomics.waitAsync()
+      from the main thread on the SharedArrayBuffer instead, and also queue up requests to avoid the slow path of
+      calling between Wasm and JS all the time. Workers could also talk to each other directly via the SharedArrayBuffer
+      in this scheme. As Shared Workers mature (currently debugging support is a bit weak and Wasm Modules and Memories
+      cannot be passed to them), a few calls could be parallelized. Before that, perhaps a normal Worker could do part
+      of what is currently done on the main thread, with or without postMessage() semantics.
+    </p>
+
+    <h2>How does this differ from previous attempts?</h2>
+    <p>
+      Linux in the browser has been done a few times before, either by slow emulation of other architectures in Wasm or
+      even pure JavaScript, or by running Linux as a library (LKL aka. um). Such attempts have inspired this more direct 
+      approach. The goal is to expose the syscalls that the Linux kernel provides. This should allow porting of
+      many more programs than possible with WASI or the current generation of Emscripten. Note that a program does not
+      necessarily have to run as a process inside Linux either, you could have just one (or a few) frontend threads that
+      you use for syscalls, possibly via some kind of message passing. This way, your program does not have to live
+      inside the memory space shared by the kernel - it can be completely sandboxed. The limitation of such an approach
+      is that you would not be able share memory, e.g. mmap()ing shared areas between programs would not work.
+    </p>
+
+    <h2>I want to hack away at this, how do I get started?</h2>
+    <p>
+      Check out the wasm-linux repo. It contains a script to build everything (LLVM, the Linux kernel, BusyBox, Musl,
+      and some other glue) into a workspace folder. The script is kept simple to get anyone started, but not required in
+      any way. You may also, optionally, use Docker to build things into a sandbox.
+    </p>
+
+    <h2>What's next?</h2>
+    <p>
+      Getting some kind of graphics working could be fun. One could try to implement EGL with WebGL as backend, exposing
+      an OpenGL ES interface. Emscripten seems to already have a good portion of this work implemented.
+    </p>
+    <p>
+      Another area worth exploring is Dwarf support, to be able to debug line-by-line in the C code. This should be
+      fairly easy to add, and most browsers support it, but I didn't bother as I wanted to learn the Wasm instruction
+      set. What could teach you better than following along the assembly listing and cross-referencing each instruction
+      to a C statement (possibly optimized and inlined - you even get learn the compiler's Wasm-specific tricks)?
+    </p>
+    <p>
+      I have not tried C++ but I think that it may require some special attention. Just like setjmp/longjmp, exceptions
+      need to be handled in a graceful way. Wasm has native support for this but it may need some tweaking to work. And
+      then there is libcxx and who knows what crazy situations that beast may put you into.
+    </p>
+    <p>
+      Looking further than the Web as a platform, Wasm also shows promise in other applications that need multi-platform
+      sandboxing. Examples include smart contracts, multi-platform apps, GPUs, agentic AI, and your next hype.
+    </p>
+
+    <h3>Wasm wish list</h3>
+    <ul>
+      <li>MMU for sharing and protecting memory.</li>
+      <li>Thread suspension.</li>
+      <li>As a community, move away from the custom Wasm binary format to ELF (for tool compatibility).</li>
+      <li>Being able to share Wasm Instances between Workers (or similar).</li>
+      <li>Being able to set a breakpoint on a memory address in the debugger (maybe this is possible already?).</li>
+    </ul>
+
+    <p>
+      There are proposals for Stack Switching and Memory Control that could enable a better Linux experience on Wasm.
+      They are not quite there yet, some tweaks are needed to make them compatible with the Linux use case, but with the
+      right motivation we can get there. True hibernation of execution state could also be quite interesting (boot once
+      and re-use a booted system). This is already possible via emulation, similar to how setjmp/longjmp is implemented
+      today, but would be more elegant and performant if supported natively by the browser.
+    </p>
+    <p>
+      I opted to not support support double-return as in fork/vfork (and setjmp/longjmp), even if LLVM supports it with
+      some runtime help. The reason is that I feel like it's not ready yet and I don't need it enough. Emscripten has
+      proven that it is possible, even if today's approaches are rather clumsy and slow. The Stack Switching proposal
+      hopefully fixes the problems of today's approaches and it's enough for me to know that a proper solution is in the
+      works. While this is all great for legacy code, using these constructs always seemed a bit problematic to me. How
+      you can write code without setjmp/longjmp should be quite obvious - but how about fork/vfork? The answer is clone!
+      The clone syscall is mostly known for its use with pthreads, where the flag CLONE_VM and its friends are used.
+      But, you can achieve both fork-like and vfork-like functionality by supplying different flags to clone (the Wasm
+      port of BusyBox for example swaps vfork() for a clone() with CLONE_VFORK specified). The best part of using clone
+      to do vforks is that you can supply a separate stack for the child function! This makes clone-based vforks much
+      safer and capable than their traditional plain vfork counterparts (e.g., you're allowed to call functions with
+      clone-based vforks, unlike in traditional vforks where the double-return on the same stack forbids this).
+    </p>
+  </article>
+</body>
