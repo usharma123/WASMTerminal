@@ -1,0 +1,16 @@
+#!/bin/sh
+# httpget - Simple HTTP GET using lwtcp
+#
+# Usage: httpget <host> [path]
+# Example: httpget example.com /index.html
+
+HOST="$1"
+URLPATH="${2:-/}"
+
+if [ -z "$HOST" ]; then
+    echo "Usage: httpget <host> [path]"
+    echo "Example: httpget example.com /api/data"
+    exit 1
+fi
+
+printf "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\nUser-Agent: httpget/1.0\r\n\r\n" "$URLPATH" "$HOST" | lwtcp "$HOST" 80

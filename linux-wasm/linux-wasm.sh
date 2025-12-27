@@ -12,25 +12,51 @@
 
 set -e
 
-LW_ROOT="$(realpath -s "$(dirname "$0")")"
+# macOS-compatible realpath function (handles -s and -m flags)
+_realpath() {
+    local path="$1"
+    if [[ -d "$path" ]]; then
+        (cd "$path" && pwd)
+    elif [[ -f "$path" ]]; then
+        local dir=$(dirname "$path")
+        local base=$(basename "$path")
+        echo "$(cd "$dir" && pwd)/$base"
+    else
+        # Path doesn't exist - resolve parent and append
+        local dir=$(dirname "$path")
+        local base=$(basename "$path")
+        if [[ -d "$dir" ]]; then
+            echo "$(cd "$dir" && pwd)/$base"
+        else
+            # Parent doesn't exist either, just make it absolute
+            if [[ "$path" = /* ]]; then
+                echo "$path"
+            else
+                echo "$(pwd)/$path"
+            fi
+        fi
+    fi
+}
+
+LW_ROOT="$(_realpath "$(dirname "$0")")"
 
 # (All paths below are resolved as absolute. This is required for the other parts of the script to work properly.)
 
 # Path to workspace (will set LW_SRC, LW_BUILD, LW_INSTALL ... paths).
 : "${LW_WORKSPACE:=$LW_ROOT/workspace}"
-LW_WORKSPACE="$(realpath -sm "$LW_WORKSPACE")"
+LW_WORKSPACE="$(_realpath "$LW_WORKSPACE")"
 
 # Path to where sources will be downloaded and patched.
 : "${LW_SRC:=$LW_WORKSPACE/src}"
-LW_SRC="$(realpath -sm "$LW_SRC")"
+LW_SRC="$(_realpath "$LW_SRC")"
 
 # Path to where each software component will be built.
 : "${LW_BUILD:=$LW_WORKSPACE/build}"
-LW_BUILD="$(realpath -sm "$LW_BUILD")"
+LW_BUILD="$(_realpath "$LW_BUILD")"
 
 # Path to where each software component will be installed.
 : "${LW_INSTALL:=$LW_WORKSPACE/install}"
-LW_INSTALL="$(realpath -sm "$LW_INSTALL")"
+LW_INSTALL="$(_realpath "$LW_INSTALL")"
 
 # Flags used with git. --depth 1 is recommended to avoid downloading a lot of history.
 : "${LW_GITFLAGS:=--depth 1}"
@@ -65,6 +91,7 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
         git -C "$LW_SRC/kernel" am < "$LW_ROOT/patches/kernel/0010-Add-Wasm-console-support.patch"
         git -C "$LW_SRC/kernel" am < "$LW_ROOT/patches/kernel/0011-Add-wasm_defconfig.patch"
         git -C "$LW_SRC/kernel" am < "$LW_ROOT/patches/kernel/0012-HACK-Workaround-broken-wq_worker_comm.patch"
+        git -C "$LW_SRC/kernel" am < "$LW_ROOT/patches/kernel/0015-Add-Wasm-network-support.patch"
     handled=1;;&
 
     "fetch-musl"|"all-musl"|"fetch"|"all")
@@ -187,6 +214,16 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
         done
     handled=1;;&
 
+    "build-lwtcp"|"all-lwtcp"|"build"|"all"|"build-os")
+        # Build lwtcp networking tool
+        "$LW_ROOT/tools/build-lwtcp.sh"
+    handled=1;;&
+
+    "build-sqlite"|"all-sqlite"|"build"|"all"|"build-os")
+        # Build SQLite database tool
+        "$LW_ROOT/tools/build-sqlite.sh"
+    handled=1;;&
+
     "build-initramfs"|"all-initramfs"|"build"|"all"|"build-os")
         mkdir -p "$LW_INSTALL/initramfs"
 
@@ -208,6 +245,38 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
             echo "./init" | cpio -ov --format=newc -A -O "$LW_INSTALL/initramfs/initramfs.cpio"
         )
 
+        # Copy additional tools to initramfs (lwtcp, sqlite3, jq, etc.)
+        mkdir -p "$LW_INSTALL/initramfs-staging/bin"
+
+        # Copy lwtcp if it exists
+        if [ -f "$LW_ROOT/patches/initramfs/lwtcp" ]; then
+            cp "$LW_ROOT/patches/initramfs/lwtcp" "$LW_INSTALL/initramfs-staging/bin/"
+        fi
+
+        # Copy sqlite3 if it exists
+        if [ -f "$LW_ROOT/patches/initramfs/sqlite3" ]; then
+            cp "$LW_ROOT/patches/initramfs/sqlite3" "$LW_INSTALL/initramfs-staging/bin/"
+        fi
+
+        # Copy jq if it exists
+        if [ -f "$LW_ROOT/patches/initramfs/jq" ]; then
+            cp "$LW_ROOT/patches/initramfs/jq" "$LW_INSTALL/initramfs-staging/bin/"
+        fi
+
+        # Copy any shell scripts from bin directory
+        if [ -d "$LW_ROOT/patches/initramfs/bin" ]; then
+            cp -r "$LW_ROOT/patches/initramfs/bin/"* "$LW_INSTALL/initramfs-staging/bin/" 2>/dev/null || true
+        fi
+
+        # Add staging contents to initramfs
+        if [ -n "$(ls -A "$LW_INSTALL/initramfs-staging/bin" 2>/dev/null)" ]; then
+            (
+                cd "$LW_INSTALL/initramfs-staging"
+                find . -print0 | cpio --null -ov --format=newc -A -O "$LW_INSTALL/initramfs/initramfs.cpio"
+            )
+        fi
+        rm -rf "$LW_INSTALL/initramfs-staging"
+
         # Finally we should zip it up so that it takes less space. This is the file to distribute.
         rm -f "$LW_INSTALL/initramfs/initramfs.cpio.gz"
         gzip "$LW_INSTALL/initramfs/initramfs.cpio"
@@ -224,7 +293,7 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
         echo "    build-xxx    -- Build component xxx (no fetching)."
         echo "    build-tools  -- Build all build tool components (llvm)."
         echo "    build-os     -- Build all OS software (excluding build tools)."
-        echo "  and components include (in order): llvm, kernel, musl, busybox-kernel-headers, busybox, initramfs."
+        echo "  and components include (in order): llvm, kernel, musl, busybox-kernel-headers, busybox, lwtcp, initramfs."
         echo ""
         echo "Fetch will download and patch the source. Build will configure, compile and install (to a folder in the workspace)."
         echo ""

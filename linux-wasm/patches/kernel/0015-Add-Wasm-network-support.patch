@@ -1,0 +1,278 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Linux Wasm <linux-wasm@example.com>
+Date: Thu, 26 Dec 2024 00:00:00 +0000
+Subject: [PATCH] Add Wasm network support
+
+Adds a misc character device driver (/dev/lwnet) that provides network
+connectivity through Wasm host callbacks. This allows userland programs
+to make TCP connections via a WebSocket proxy running in the browser.
+
+The driver provides:
+- ioctl(LWNET_OPEN) to open a connection, returns connection ID
+- ioctl(LWNET_CLOSE) to close a connection
+- read() to receive data from the current connection
+- write() to send data to the current connection
+---
+ arch/wasm/configs/wasm_defconfig |   1 +
+ arch/wasm/drivers/Kconfig        |  14 ++++
+ arch/wasm/drivers/Makefile       |   1 +
+ arch/wasm/drivers/net_wasm.c     | 188 +++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 204 insertions(+)
+ create mode 100644 arch/wasm/drivers/net_wasm.c
+
+diff --git a/arch/wasm/configs/wasm_defconfig b/arch/wasm/configs/wasm_defconfig
+index 10fb9e0ab..a2c3d4e5f 100644
+--- a/arch/wasm/configs/wasm_defconfig
++++ b/arch/wasm/configs/wasm_defconfig
+@@ -6,6 +6,7 @@ CONFIG_MAGIC_SYSRQ=y
+ CONFIG_DEBUG_KERNEL=y
+ CONFIG_DEBUG_INFO_DWARF5=y
+ CONFIG_HVC_WASM=y
++CONFIG_NET_WASM=y
+ 
+ CONFIG_BLK_DEV_INITRD=y
+ 
+diff --git a/arch/wasm/drivers/Kconfig b/arch/wasm/drivers/Kconfig
+index be8b75496..a1c2d3e78 100644
+--- a/arch/wasm/drivers/Kconfig
++++ b/arch/wasm/drivers/Kconfig
+@@ -18,4 +18,18 @@ config HVC_WASM
+ 
+ 	  If you don't know what to do here, say Y.
+ 
++config NET_WASM
++	bool "Wasm network support"
++	select MISC_DEVICES
++	help
++	  This config option enables support for TCP networking through the
++	  Wasm host. It creates a misc character device /dev/lwnet that
++	  userland programs can use to open TCP connections via ioctl and
++	  transfer data via read/write.
++
++	  The actual network connectivity is provided by a WebSocket proxy
++	  running in the browser that bridges to real TCP connections.
++
++	  If you don't know what to do here, say Y.
++
+ endmenu
+diff --git a/arch/wasm/drivers/Makefile b/arch/wasm/drivers/Makefile
+index 0ebdc20a8..f3a8c5d12 100644
+--- a/arch/wasm/drivers/Makefile
++++ b/arch/wasm/drivers/Makefile
+@@ -1,3 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ 
+ obj-$(CONFIG_HVC_WASM) += hvc_wasm.o
++obj-$(CONFIG_NET_WASM) += net_wasm.o
+diff --git a/arch/wasm/drivers/net_wasm.c b/arch/wasm/drivers/net_wasm.c
+new file mode 100644
+index 000000000..1a2b3c4d5
+--- /dev/null
++++ b/arch/wasm/drivers/net_wasm.c
+@@ -0,0 +1,203 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Wasm Network Driver
++ *
++ * Provides TCP connectivity through Wasm host callbacks.
++ * Creates /dev/lwnet misc device for userland access.
++ */
++
++#include <linux/miscdevice.h>
++#include <linux/fs.h>
++#include <linux/uaccess.h>
++#include <linux/slab.h>
++#include <linux/module.h>
++
++/* Host callbacks - implemented in JavaScript (linux-worker.js) */
++extern int wasm_net_open(const char *host, int port);
++extern int wasm_net_write(int conn_id, const char *buf, int len);
++extern int wasm_net_read(int conn_id, char *buf, int count);
++extern int wasm_net_poll(int conn_id);
++extern void wasm_net_close(int conn_id);
++
++/* ioctl commands */
++#define LWNET_IOC_MAGIC 'N'
++#define LWNET_OPEN    _IOWR(LWNET_IOC_MAGIC, 1, struct lwnet_open_args)
++#define LWNET_CLOSE   _IOW(LWNET_IOC_MAGIC, 2, int)
++#define LWNET_SETCONN _IOW(LWNET_IOC_MAGIC, 3, int)
++#define LWNET_POLL    _IOR(LWNET_IOC_MAGIC, 4, int)
++
++struct lwnet_open_args {
++	char host[256];
++	int port;
++	int conn_id;  /* output: connection ID on success */
++};
++
++/* Per-file private data */
++struct lwnet_file_data {
++	int current_conn_id;  /* Currently selected connection for read/write */
++};
++
++static int lwnet_open(struct inode *inode, struct file *file)
++{
++	struct lwnet_file_data *data;
++
++	data = kzalloc(sizeof(*data), GFP_KERNEL);
++	if (!data)
++		return -ENOMEM;
++
++	data->current_conn_id = -1;
++	file->private_data = data;
++
++	return 0;
++}
++
++static int lwnet_release(struct inode *inode, struct file *file)
++{
++	struct lwnet_file_data *data = file->private_data;
++
++	/* Close any open connection */
++	if (data && data->current_conn_id >= 0) {
++		wasm_net_close(data->current_conn_id);
++	}
++
++	kfree(data);
++	return 0;
++}
++
++static ssize_t lwnet_read(struct file *file, char __user *buf,
++			  size_t count, loff_t *ppos)
++{
++	struct lwnet_file_data *data = file->private_data;
++	char *kbuf;
++	int ret;
++
++	if (!data || data->current_conn_id < 0)
++		return -ENOTCONN;
++
++	if (count > 65536)
++		count = 65536;
++
++	kbuf = kmalloc(count, GFP_KERNEL);
++	if (!kbuf)
++		return -ENOMEM;
++
++	ret = wasm_net_read(data->current_conn_id, kbuf, count);
++
++	if (ret > 0) {
++		if (copy_to_user(buf, kbuf, ret)) {
++			kfree(kbuf);
++			return -EFAULT;
++		}
++	}
++
++	kfree(kbuf);
++	return ret;
++}
++
++static ssize_t lwnet_write(struct file *file, const char __user *buf,
++			   size_t count, loff_t *ppos)
++{
++	struct lwnet_file_data *data = file->private_data;
++	char *kbuf;
++	int ret;
++
++	if (!data || data->current_conn_id < 0)
++		return -ENOTCONN;
++
++	if (count > 65536)
++		count = 65536;
++
++	kbuf = kmalloc(count, GFP_KERNEL);
++	if (!kbuf)
++		return -ENOMEM;
++
++	if (copy_from_user(kbuf, buf, count)) {
++		kfree(kbuf);
++		return -EFAULT;
++	}
++
++	ret = wasm_net_write(data->current_conn_id, kbuf, count);
++
++	kfree(kbuf);
++	return ret < 0 ? ret : count;
++}
++
++static long lwnet_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
++{
++	struct lwnet_file_data *data = file->private_data;
++	struct lwnet_open_args open_args;
++	int conn_id, poll_result;
++
++	switch (cmd) {
++	case LWNET_OPEN:
++		if (copy_from_user(&open_args, (void __user *)arg, sizeof(open_args)))
++			return -EFAULT;
++
++		/* Ensure null-termination */
++		open_args.host[sizeof(open_args.host) - 1] = '\0';
++
++		conn_id = wasm_net_open(open_args.host, open_args.port);
++		if (conn_id < 0)
++			return conn_id;
++
++		open_args.conn_id = conn_id;
++		data->current_conn_id = conn_id;
++
++		if (copy_to_user((void __user *)arg, &open_args, sizeof(open_args)))
++			return -EFAULT;
++
++		return 0;
++
++	case LWNET_CLOSE:
++		if (get_user(conn_id, (int __user *)arg))
++			return -EFAULT;
++
++		wasm_net_close(conn_id);
++
++		if (data->current_conn_id == conn_id)
++			data->current_conn_id = -1;
++
++		return 0;
++
++	case LWNET_SETCONN:
++		if (get_user(conn_id, (int __user *)arg))
++			return -EFAULT;
++
++		data->current_conn_id = conn_id;
++		return 0;
++
++	case LWNET_POLL:
++		if (data->current_conn_id < 0)
++			return -ENOTCONN;
++
++		poll_result = wasm_net_poll(data->current_conn_id);
++		if (put_user(poll_result, (int __user *)arg))
++			return -EFAULT;
++
++		return 0;
++
++	default:
++		return -ENOTTY;
++	}
++}
++
++static const struct file_operations lwnet_fops = {
++	.owner          = THIS_MODULE,
++	.open           = lwnet_open,
++	.release        = lwnet_release,
++	.read           = lwnet_read,
++	.write          = lwnet_write,
++	.unlocked_ioctl = lwnet_ioctl,
++};
++
++static struct miscdevice lwnet_miscdev = {
++	.minor = 123,
++	.name  = "lwnet",
++	.fops  = &lwnet_fops,
++};
++
++static int __init lwnet_init(void)
++{
++	return misc_register(&lwnet_miscdev);
++}
++device_initcall(lwnet_init);
+-- 
+2.25.1
+

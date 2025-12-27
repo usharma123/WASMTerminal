@@ -3,12 +3,27 @@
 mount -t proc none /proc
 mount -t sysfs none /sys
 
+# Create network device node for lwtcp
+mknod /dev/lwnet c 10 123 2>/dev/null || true
+
+# Create directories for lwpkg
+mkdir -p /opt/lwpkg/cache 2>/dev/null
+
 echo
-echo "Welcome to Linux running on Wasm!"
-echo "Known bugs:"
-echo "   * Terminal input freezes after a while (timer issue)."
-echo "   * dup_fd, wq_worker_comm, rcu_os crash (memory corruption (fixed?))."
-echo "   * longjmp() does not work (not implemented yet)."
+echo "=== Linux/Wasm Developer Playground ==="
+echo
+echo "Available tools:"
+[ -f /bin/sqlite3 ] && echo "  sqlite3    - SQLite database"
+[ -f /bin/lwtcp ] && echo "  lwtcp      - TCP client (usage: lwtcp host port)"
+[ -f /bin/httpget ] && echo "  httpget    - HTTP GET (usage: httpget host /path)"
+[ -f /bin/lwpkg ] && echo "  lwpkg      - Package manager (lwpkg help)"
+echo
+echo "Examples:"
+echo "  sqlite3 :memory:                     # Start SQLite"
+echo "  httpget example.com /               # Fetch webpage"
+echo "  echo 'SELECT 1+1;' | sqlite3        # Quick calculation"
+echo
+echo "Type 'busybox --list' for all available commands."
 echo
 
 exec /sbin/init -s

@@ -21,6 +21,16 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   // Filesystem persistence support
   let fsPersist = null;
 
+  // Memory isolation support
+  // Map of task_ptr -> { memory: WebAssembly.Memory, pages: number }
+  const user_memories = new Map();
+
+  // Syscall buffer allocation in kernel memory
+  // Each task gets a 64KB buffer for syscall data copying
+  const SYSCALL_BUFFER_SIZE = 64 * 1024;
+  const syscall_buffers = new Map();  // task_ptr -> buffer_offset
+  let next_syscall_buffer_offset = 0;  // Will be set after memory is created
+
   const lock_notify = (locks, lock, count) => {
     Atomics.store(locks._memory, locks[lock], 1);
     Atomics.notify(locks._memory, locks[lock], count || 1);
@@ -78,6 +88,9 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       // Stop the worker, which will stop script execution. This is safe as the task should be hanging on a lock waiting
       // to be scheduled - which never happens as dead tasks don't get ever get scheduled.
       tasks[message.dead_task].worker.terminate();
+
+      // Free isolated user memory for this task
+      free_task_memory(message.dead_task);
 
       delete tasks[message.dead_task];
     },
@@ -348,12 +361,96 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     },
   };
 
-  /// Memory shared between all CPUs.
+  /// Memory shared between all CPUs (kernel memory).
   const memory = new WebAssembly.Memory({
     initial: 30, // TODO: extract this automatically from vmlinux.
     maximum: 0x10000, // Allow the full 32-bit address space to be allocated.
     shared: true,
   });
+
+  // Reserve space for syscall buffers after initial kernel memory
+  // We'll allocate from a high address to avoid conflicts with kernel data
+  const SYSCALL_BUFFER_BASE = 0x70000000;  // 1.75 GB mark
+  next_syscall_buffer_offset = SYSCALL_BUFFER_BASE;
+
+  /**
+   * Create isolated user memory for a new process.
+   * @param {number} task_ptr - The task pointer (process identifier)
+   * @param {number} initial_pages - Initial memory size in 64KB pages
+   * @returns {WebAssembly.Memory} The new user memory instance
+   */
+  const create_user_memory = (task_ptr, initial_pages = 16) => {
+    // For Phase 1, we use shared memory so the main thread can still
+    // access it for networking/console callbacks. True isolation (with
+    // non-shared memory) will be implemented in Phase 2 when we move
+    // callback handling to the worker side.
+    //
+    // The key isolation benefit is that each process has its OWN memory
+    // instance - so one process cannot read/write another process's memory.
+    const user_mem = new WebAssembly.Memory({
+      initial: initial_pages,
+      maximum: 0x10000,  // Allow up to 4GB
+      shared: true,  // Shared for now so main thread can access for callbacks
+    });
+
+    user_memories.set(task_ptr, {
+      memory: user_mem,
+      pages: initial_pages,
+    });
+
+    log(`[MemIso] Created user memory for task ${task_ptr}: ${initial_pages} pages`);
+    return user_mem;
+  };
+
+  /**
+   * Allocate a syscall buffer for a task in kernel memory.
+   * @param {number} task_ptr - The task pointer
+   * @returns {number} The buffer offset in kernel memory
+   */
+  const allocate_syscall_buffer = (task_ptr) => {
+    if (syscall_buffers.has(task_ptr)) {
+      return syscall_buffers.get(task_ptr);
+    }
+
+    const buffer_offset = next_syscall_buffer_offset;
+    next_syscall_buffer_offset += SYSCALL_BUFFER_SIZE;
+
+    // Ensure kernel memory is large enough
+    const required_pages = Math.ceil(next_syscall_buffer_offset / 0x10000);
+    const current_pages = memory.buffer.byteLength / 0x10000;
+    if (required_pages > current_pages) {
+      memory.grow(required_pages - current_pages);
+    }
+
+    syscall_buffers.set(task_ptr, buffer_offset);
+    log(`[MemIso] Allocated syscall buffer for task ${task_ptr} at offset ${buffer_offset.toString(16)}`);
+    return buffer_offset;
+  };
+
+  /**
+   * Free user memory and syscall buffer when a task is released.
+   * @param {number} task_ptr - The task pointer
+   */
+  const free_task_memory = (task_ptr) => {
+    if (user_memories.has(task_ptr)) {
+      user_memories.delete(task_ptr);
+      log(`[MemIso] Freed user memory for task ${task_ptr}`);
+    }
+    if (syscall_buffers.has(task_ptr)) {
+      // Note: We don't actually free syscall buffer space (could be improved with a free list)
+      syscall_buffers.delete(task_ptr);
+    }
+  };
+
+  /**
+   * Get user memory for a task.
+   * @param {number} task_ptr - The task pointer
+   * @returns {WebAssembly.Memory|null} The user memory or null if not found
+   */
+  const get_user_memory = (task_ptr) => {
+    const entry = user_memories.get(task_ptr);
+    return entry ? entry.memory : null;
+  };
 
   /**
    * Create and run one CPU in a background thread (a Web Worker).
@@ -392,11 +489,51 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
    * able to suspend them from JS, the host OS will do that.
    */
   const make_task = (prev_task, new_task, name, user_executable) => {
+    let user_memory = null;
+    let syscall_buffer_offset = null;
+    let is_memory_copy = false;
+
+    // Create isolated memory for user processes (those with user_executable)
+    if (user_executable) {
+      // Check if parent task has user memory (this is a fork/clone)
+      const parent_memory_entry = user_memories.get(prev_task);
+
+      if (parent_memory_entry) {
+        // Fork/Clone: Copy parent's memory to child
+        // For now, we always copy (fork semantics). With CLONE_VM, we'd share instead.
+        // TODO: Detect CLONE_VM and share memory instead of copying
+        const parent_mem = parent_memory_entry.memory;
+        const parent_pages = parent_mem.buffer.byteLength / 0x10000;
+
+        // Create child memory with same size as parent
+        user_memory = create_user_memory(new_task, parent_pages);
+
+        // Copy parent memory contents to child
+        const parent_view = new Uint8Array(parent_mem.buffer);
+        const child_view = new Uint8Array(user_memory.buffer);
+        child_view.set(parent_view);
+
+        is_memory_copy = true;
+        log(`[MemIso] Fork: Copied ${parent_pages} pages from task ${prev_task} to ${new_task}`);
+      } else {
+        // New process (exec from kthread): Create fresh memory
+        user_memory = create_user_memory(new_task, 16);
+      }
+
+      // Allocate syscall buffer in kernel memory
+      syscall_buffer_offset = allocate_syscall_buffer(new_task);
+    }
+
     const options = {
       runner_type: "task",
       prev_task: prev_task,
       new_task: new_task,
       user_executable: user_executable,
+      // Memory isolation data
+      user_memory: user_memory,
+      syscall_buffer_offset: syscall_buffer_offset,
+      syscall_buffer_size: SYSCALL_BUFFER_SIZE,
+      is_memory_copy: is_memory_copy,  // Hint that memory was copied from parent
     };
     tasks[new_task] = make_vmlinux_runner(name + " (" + new_task + ")", options);
   };
@@ -432,10 +569,11 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       ...options,
       method: "init",
       vmlinux: vmlinux,
-      memory: memory,
+      memory: memory,  // Kernel memory (shared)
       locks: locks,
       last_task: last_task,
       runner_name: name,
+      // user_memory, syscall_buffer_offset, syscall_buffer_size are passed via ...options
     });
 
     return {

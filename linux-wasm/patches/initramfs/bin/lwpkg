@@ -1,0 +1,204 @@
+#!/bin/sh
+# lwpkg - Lightweight Package Manager for Linux/Wasm
+#
+# Manages on-demand Wasm binary packages via HTTP download
+#
+# Usage:
+#   lwpkg update          - Fetch latest package registry
+#   lwpkg list            - List available packages
+#   lwpkg installed       - List installed packages
+#   lwpkg install <pkg>   - Install a package
+#   lwpkg remove <pkg>    - Remove a package
+
+LWPKG_DIR="/opt/lwpkg"
+REGISTRY="$LWPKG_DIR/registry"
+INSTALLED="$LWPKG_DIR/installed"
+CACHE="$LWPKG_DIR/cache"
+
+# CDN/GitHub for packages (update this to your actual package host)
+PKG_HOST="raw.githubusercontent.com"
+PKG_BASE="/joelseverin/linux-wasm-packages/main"
+
+# Ensure directories exist
+mkdir -p "$LWPKG_DIR" "$CACHE" 2>/dev/null
+
+usage() {
+    echo "lwpkg - Lightweight Package Manager"
+    echo ""
+    echo "Usage: lwpkg <command> [package]"
+    echo ""
+    echo "Commands:"
+    echo "  update              Fetch latest package list"
+    echo "  list                List available packages"
+    echo "  installed           List installed packages"
+    echo "  install <package>   Install a package"
+    echo "  remove <package>    Remove a package"
+    echo "  info <package>      Show package info"
+    echo ""
+    echo "Example:"
+    echo "  lwpkg update"
+    echo "  lwpkg install lua"
+}
+
+# Fetch a file via HTTP
+fetch() {
+    local host="$1"
+    local path="$2"
+    local out="$3"
+
+    printf "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n" "$path" "$host" | lwtcp "$host" 80 > "$CACHE/tmp_response"
+
+    # Skip HTTP headers (find blank line and take everything after)
+    sed '1,/^\r$/d' "$CACHE/tmp_response" > "$out"
+    rm -f "$CACHE/tmp_response"
+}
+
+cmd_update() {
+    echo "Updating package registry..."
+    fetch "$PKG_HOST" "$PKG_BASE/registry.txt" "$REGISTRY"
+
+    if [ -s "$REGISTRY" ]; then
+        echo "Registry updated successfully."
+        echo "Available packages:"
+        cat "$REGISTRY" | while read line; do
+            [ -n "$line" ] && echo "  - $line"
+        done
+    else
+        echo "Failed to fetch registry or registry is empty."
+        echo ""
+        echo "Note: Package hosting not yet configured."
+        echo "Available built-in tools: sqlite3, lwtcp"
+    fi
+}
+
+cmd_list() {
+    if [ ! -f "$REGISTRY" ]; then
+        echo "No registry found. Run 'lwpkg update' first."
+        echo ""
+        echo "Built-in tools available:"
+        echo "  sqlite3   - SQLite database"
+        echo "  lwtcp     - TCP client"
+        exit 0
+    fi
+
+    echo "Available packages:"
+    cat "$REGISTRY" | while read line; do
+        [ -n "$line" ] && echo "  $line"
+    done
+}
+
+cmd_installed() {
+    echo "Installed packages:"
+    if [ -f "$INSTALLED" ]; then
+        cat "$INSTALLED" | while read pkg; do
+            [ -n "$pkg" ] && echo "  $pkg"
+        done
+    else
+        echo "  (none via lwpkg)"
+    fi
+    echo ""
+    echo "Built-in tools:"
+    [ -f "/bin/sqlite3" ] && echo "  sqlite3"
+    [ -f "/bin/lwtcp" ] && echo "  lwtcp"
+}
+
+cmd_install() {
+    local pkg="$1"
+
+    if [ -z "$pkg" ]; then
+        echo "Usage: lwpkg install <package>"
+        exit 1
+    fi
+
+    echo "Installing $pkg..."
+
+    # Fetch package binary
+    local pkg_path="$PKG_BASE/packages/${pkg}.wasm"
+    fetch "$PKG_HOST" "$pkg_path" "$CACHE/${pkg}.wasm"
+
+    if [ -s "$CACHE/${pkg}.wasm" ]; then
+        # Check if it looks like a valid Wasm file
+        if head -c 4 "$CACHE/${pkg}.wasm" | grep -q "asm"; then
+            cp "$CACHE/${pkg}.wasm" "/bin/$pkg"
+            chmod +x "/bin/$pkg"
+            echo "$pkg" >> "$INSTALLED"
+            echo "Installed $pkg to /bin/$pkg"
+        else
+            echo "Error: Downloaded file is not a valid Wasm binary."
+            echo "Package may not exist or server returned an error."
+            rm -f "$CACHE/${pkg}.wasm"
+            exit 1
+        fi
+    else
+        echo "Failed to download $pkg."
+        echo "Package may not be available yet."
+        exit 1
+    fi
+}
+
+cmd_remove() {
+    local pkg="$1"
+
+    if [ -z "$pkg" ]; then
+        echo "Usage: lwpkg remove <package>"
+        exit 1
+    fi
+
+    if [ -f "/bin/$pkg" ]; then
+        rm -f "/bin/$pkg"
+        # Remove from installed list
+        grep -v "^${pkg}$" "$INSTALLED" > "$INSTALLED.tmp" 2>/dev/null
+        mv "$INSTALLED.tmp" "$INSTALLED" 2>/dev/null
+        echo "Removed $pkg"
+    else
+        echo "Package $pkg is not installed."
+    fi
+}
+
+cmd_info() {
+    local pkg="$1"
+
+    if [ -z "$pkg" ]; then
+        echo "Usage: lwpkg info <package>"
+        exit 1
+    fi
+
+    if [ -f "/bin/$pkg" ]; then
+        echo "Package: $pkg"
+        echo "Status: Installed"
+        echo "Location: /bin/$pkg"
+        ls -la "/bin/$pkg"
+    else
+        echo "Package $pkg is not installed."
+        echo "Run 'lwpkg install $pkg' to install."
+    fi
+}
+
+# Main command dispatch
+case "$1" in
+    update)
+        cmd_update
+        ;;
+    list)
+        cmd_list
+        ;;
+    installed)
+        cmd_installed
+        ;;
+    install)
+        cmd_install "$2"
+        ;;
+    remove)
+        cmd_remove "$2"
+        ;;
+    info)
+        cmd_info "$2"
+        ;;
+    help|--help|-h)
+        usage
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

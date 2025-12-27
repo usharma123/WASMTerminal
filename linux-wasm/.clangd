@@ -1,0 +1,10 @@
+CompileFlags:
+  Add:
+    - --target=wasm32-unknown-unknown
+    - -D__linux__
+    - -Wno-unknown-attributes
+  Remove:
+    - -Xclang
+    - -target-feature
+    - +atomics
+    - +bulk-memory
