@@ -621,7 +621,7 @@
       // Calculate terminal size based on available space
       // Font size 14px with lineHeight 1.2 = ~17px per line, but actual rendering adds a bit more
       const charWidth = 8.4; // JetBrains Mono is slightly narrower
-      const charHeight = 17.5; // Account for lineHeight and font metrics
+      const charHeight = 18; // Account for lineHeight and font metrics
       const paddingH = 32; // 16px padding on each side
       const paddingV = 24; // 12px padding top/bottom
       
@@ -633,7 +633,7 @@
       const availableHeight = terminalWindow.clientHeight - titleBarHeight - statusBarHeight;
 
       const cols = Math.floor((availableWidth - paddingH) / charWidth);
-      const rows = Math.floor((availableHeight - paddingV) / charHeight) - 2; // Subtract 2 rows for safety
+      const rows = Math.floor((availableHeight - paddingV) / charHeight) - 3; // Subtract 3 rows for safety
 
       updateTerminalSize(cols, rows);
 
@@ -682,7 +682,7 @@
         const newAvailableWidth = terminalWindow.clientWidth;
         const newAvailableHeight = terminalWindow.clientHeight - titleBarHeight - statusBarHeight;
         const newCols = Math.floor((newAvailableWidth - paddingH) / charWidth);
-        const newRows = Math.floor((newAvailableHeight - paddingV) / charHeight) - 2;
+        const newRows = Math.floor((newAvailableHeight - paddingV) / charHeight) - 3;
         term.resize(newCols, newRows);
         updateTerminalSize(newCols, newRows);
       });
