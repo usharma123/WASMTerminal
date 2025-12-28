@@ -9,6 +9,27 @@ mknod /dev/lwnet c 10 123 2>/dev/null || true
 # Create directories for lwpkg
 mkdir -p /opt/lwpkg/cache 2>/dev/null
 
+# Restore cached packages from IndexedDB (persisted across browser sessions)
+if command -v pkghelper >/dev/null 2>&1; then
+    # Get list of cached packages
+    cached=$(pkghelper list 2>/dev/null | grep "^  " | tr -d ' ')
+    if [ -n "$cached" ]; then
+        echo "Restoring cached packages..."
+        for pkg in $cached; do
+            # Determine binary name based on package
+            binname="$pkg"
+            case "$pkg" in
+                nodejs) binname="node" ;;
+                python) binname="python3" ;;
+            esac
+
+            if pkghelper restore "$pkg" "/bin/$binname" >/dev/null 2>&1; then
+                echo "  Restored $pkg -> /bin/$binname"
+            fi
+        done
+    fi
+fi
+
 echo
 echo "=== Linux/Wasm Developer Playground ==="
 echo
@@ -17,11 +38,13 @@ echo "Available tools:"
 [ -f /bin/lwtcp ] && echo "  lwtcp      - TCP client (usage: lwtcp host port)"
 [ -f /bin/httpget ] && echo "  httpget    - HTTP GET (usage: httpget host /path)"
 [ -f /bin/lwpkg ] && echo "  lwpkg      - Package manager (lwpkg help)"
+[ -f /bin/qjs ] && echo "  qjs        - QuickJS JavaScript runtime"
 echo
 echo "Examples:"
 echo "  sqlite3 :memory:                     # Start SQLite"
 echo "  httpget example.com /               # Fetch webpage"
 echo "  echo 'SELECT 1+1;' | sqlite3        # Quick calculation"
+echo "  qjs -e 'console.log(2+2)'           # Run JavaScript"
 echo
 echo "Type 'busybox --list' for all available commands."
 echo

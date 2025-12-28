@@ -219,9 +219,19 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
         "$LW_ROOT/tools/build-lwtcp.sh"
     handled=1;;&
 
+    "build-pkghelper"|"all-pkghelper"|"build"|"all"|"build-os")
+        # Build pkghelper for browser-side package downloads
+        "$LW_ROOT/tools/build-pkghelper.sh"
+    handled=1;;&
+
     "build-sqlite"|"all-sqlite"|"build"|"all"|"build-os")
         # Build SQLite database tool
         "$LW_ROOT/tools/build-sqlite.sh"
+    handled=1;;&
+
+    "build-quickjs"|"all-quickjs")
+        # Build QuickJS JavaScript runtime (optional, not in default build)
+        "$LW_ROOT/tools/build-quickjs.sh"
     handled=1;;&
 
     "build-initramfs"|"all-initramfs"|"build"|"all"|"build-os")
@@ -258,9 +268,19 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
             cp "$LW_ROOT/patches/initramfs/sqlite3" "$LW_INSTALL/initramfs-staging/bin/"
         fi
 
+        # Copy pkghelper if it exists
+        if [ -f "$LW_ROOT/patches/initramfs/pkghelper" ]; then
+            cp "$LW_ROOT/patches/initramfs/pkghelper" "$LW_INSTALL/initramfs-staging/bin/"
+        fi
+
         # Copy jq if it exists
         if [ -f "$LW_ROOT/patches/initramfs/jq" ]; then
             cp "$LW_ROOT/patches/initramfs/jq" "$LW_INSTALL/initramfs-staging/bin/"
+        fi
+
+        # Copy QuickJS if it exists
+        if [ -f "$LW_ROOT/patches/initramfs/qjs" ]; then
+            cp "$LW_ROOT/patches/initramfs/qjs" "$LW_INSTALL/initramfs-staging/bin/"
         fi
 
         # Copy any shell scripts from bin directory
@@ -293,7 +313,7 @@ case "$1" in # note use of ;;& meaning that each case is re-tested (can hit mult
         echo "    build-xxx    -- Build component xxx (no fetching)."
         echo "    build-tools  -- Build all build tool components (llvm)."
         echo "    build-os     -- Build all OS software (excluding build tools)."
-        echo "  and components include (in order): llvm, kernel, musl, busybox-kernel-headers, busybox, lwtcp, initramfs."
+        echo "  and components include (in order): llvm, kernel, musl, busybox-kernel-headers, busybox, lwtcp, pkghelper, initramfs."
         echo ""
         echo "Fetch will download and patch the source. Build will configure, compile and install (to a folder in the workspace)."
         echo ""

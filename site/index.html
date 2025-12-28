@@ -705,7 +705,8 @@
         await new Promise(resolve => setTimeout(resolve, 800));
 
         const worker_url = "linux-worker.js?v=" + wasm_linux_version;
-        const vmlinux = await WebAssembly.compileStreaming(fetch("vmlinux.wasm?v=" + wasm_linux_version));
+        // Fetch WASM from R2 (too large for Cloudflare Pages 25MB limit)
+        const vmlinux = await WebAssembly.compileStreaming(fetch("https://pub-2eb1d8b83528477a9b47ac7f8c23aac9.r2.dev/vmlinux.wasm"));
 
         const boot_cmdline =
           "maxcpus=3 nohz_full=0,2-63 root=/dev/ram0 rootfstype=ramfs init=/init console=hvc console=ttyS0";

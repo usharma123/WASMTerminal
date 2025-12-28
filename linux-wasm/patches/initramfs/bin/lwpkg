@@ -19,8 +19,23 @@ CACHE="$LWPKG_DIR/cache"
 PKG_HOST="raw.githubusercontent.com"
 PKG_BASE="/joelseverin/linux-wasm-packages/main"
 
+# Large packages that use browser-side download (CDN)
+# These are downloaded via pkghelper which uses browser fetch API
+LARGE_PACKAGES="nodejs python"
+
 # Ensure directories exist
 mkdir -p "$LWPKG_DIR" "$CACHE" 2>/dev/null
+
+# Check if a package is a large package (uses browser download)
+is_large_package() {
+    local pkg="$1"
+    for large_pkg in $LARGE_PACKAGES; do
+        if [ "$pkg" = "$large_pkg" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 usage() {
     echo "lwpkg - Lightweight Package Manager"
@@ -72,19 +87,26 @@ cmd_update() {
 }
 
 cmd_list() {
-    if [ ! -f "$REGISTRY" ]; then
-        echo "No registry found. Run 'lwpkg update' first."
-        echo ""
-        echo "Built-in tools available:"
-        echo "  sqlite3   - SQLite database"
-        echo "  lwtcp     - TCP client"
-        exit 0
-    fi
-
     echo "Available packages:"
-    cat "$REGISTRY" | while read line; do
-        [ -n "$line" ] && echo "  $line"
+    echo ""
+    echo "  Large packages (CDN download with progress):"
+    for pkg in $LARGE_PACKAGES; do
+        echo "    $pkg"
     done
+    echo ""
+
+    if [ -f "$REGISTRY" ]; then
+        echo "  Registry packages:"
+        cat "$REGISTRY" | while read line; do
+            [ -n "$line" ] && echo "    $line"
+        done
+    else
+        echo "  (Run 'lwpkg update' for additional packages)"
+    fi
+    echo ""
+    echo "Built-in tools:"
+    echo "  sqlite3   - SQLite database"
+    echo "  lwtcp     - TCP client"
 }
 
 cmd_installed() {
@@ -96,10 +118,19 @@ cmd_installed() {
     else
         echo "  (none via lwpkg)"
     fi
+
+    # Show cached large packages from IndexedDB
+    if command -v pkghelper >/dev/null 2>&1; then
+        echo ""
+        echo "Cached packages (IndexedDB):"
+        pkghelper list 2>/dev/null | grep -v "^Cached" | grep -v "^No cached" || echo "  (none)"
+    fi
+
     echo ""
     echo "Built-in tools:"
     [ -f "/bin/sqlite3" ] && echo "  sqlite3"
     [ -f "/bin/lwtcp" ] && echo "  lwtcp"
+    [ -f "/bin/pkghelper" ] && echo "  pkghelper"
 }
 
 cmd_install() {
@@ -108,6 +139,12 @@ cmd_install() {
     if [ -z "$pkg" ]; then
         echo "Usage: lwpkg install <package>"
         exit 1
+    fi
+
+    # Check if this is a large package that uses browser-side download
+    if is_large_package "$pkg"; then
+        cmd_install_large "$pkg"
+        return $?
     fi
 
     echo "Installing $pkg..."
@@ -133,6 +170,62 @@ cmd_install() {
         echo "Failed to download $pkg."
         echo "Package may not be available yet."
         exit 1
+    fi
+}
+
+# Install a large package via browser-side download
+cmd_install_large() {
+    local pkg="$1"
+
+    # Check if pkghelper is available
+    if ! command -v pkghelper >/dev/null 2>&1; then
+        echo "Error: pkghelper not found."
+        echo "Large package installation requires pkghelper binary."
+        exit 1
+    fi
+
+    # Check if already cached in IndexedDB
+    if pkghelper check "$pkg" >/dev/null 2>&1; then
+        echo "$pkg is already cached. Restoring..."
+        # Determine binary name based on package
+        local binname="$pkg"
+        case "$pkg" in
+            nodejs) binname="node" ;;
+            python) binname="python3" ;;
+        esac
+
+        if pkghelper restore "$pkg" "/bin/$binname"; then
+            echo "$pkg" >> "$INSTALLED"
+            echo "Installed $pkg to /bin/$binname"
+            return 0
+        else
+            echo "Failed to restore $pkg from cache."
+            return 1
+        fi
+    fi
+
+    # Download via browser (shows progress bar in terminal)
+    echo "Downloading $pkg from CDN..."
+    if pkghelper install "$pkg"; then
+        # Determine binary name based on package
+        local binname="$pkg"
+        case "$pkg" in
+            nodejs) binname="node" ;;
+            python) binname="python3" ;;
+        esac
+
+        # Restore to /bin
+        if pkghelper restore "$pkg" "/bin/$binname"; then
+            echo "$pkg" >> "$INSTALLED"
+            echo "Installed $pkg to /bin/$binname"
+            return 0
+        else
+            echo "Download succeeded but restore failed."
+            return 1
+        fi
+    else
+        echo "Failed to download $pkg."
+        return 1
     fi
 }
 
