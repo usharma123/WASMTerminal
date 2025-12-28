@@ -81,7 +81,7 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
 
     create_and_run_task: (message) => {
       // ret_from_fork will make sure the task switch finishes.
-      make_task(message.prev_task, message.new_task, message.name, message.user_executable);
+      make_task(message.prev_task, message.new_task, message.name, message.user_executable, message.clone_flags);
     },
 
     release_task: (message) => {
@@ -359,6 +359,143 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
         Atomics.notify(message.fs_messenger, 0, 1);
       }
     },
+
+    // Package management callbacks
+    pkg_check: async (message, worker) => {
+      // Check if package is cached in IndexedDB
+      if (!fsPersist) {
+        Atomics.store(message.pkg_messenger, 0, 1);  // not cached
+        Atomics.notify(message.pkg_messenger, 0, 1);
+        return;
+      }
+
+      try {
+        const exists = await fsPersist.exists(`/opt/pkg/${message.pkgName}.wasm`);
+        Atomics.store(message.pkg_messenger, 0, exists ? 0 : 1);  // 0 = cached, 1 = not cached
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      } catch (err) {
+        log('[Pkg] Check failed: ' + err.message);
+        Atomics.store(message.pkg_messenger, 0, 1);
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      }
+    },
+
+    pkg_install: async (message, worker) => {
+      // Download and cache package from CDN
+      if (!fsPersist) {
+        Atomics.store(message.pkg_messenger, 0, 2);  // error - no persistence
+        Atomics.notify(message.pkg_messenger, 0, 1);
+        return;
+      }
+
+      const pkgName = message.pkgName;
+      const pkgInfo = typeof getPackageInfo === 'function' ? getPackageInfo(pkgName) : null;
+
+      if (!pkgInfo) {
+        log('[Pkg] Unknown package: ' + pkgName);
+        Atomics.store(message.pkg_messenger, 0, 3);  // unknown package
+        Atomics.notify(message.pkg_messenger, 0, 1);
+        return;
+      }
+
+      try {
+        // Create progress bar if terminal is available
+        let progressBar = null;
+        if (typeof term !== 'undefined' && typeof TerminalProgressBar !== 'undefined') {
+          progressBar = new TerminalProgressBar(term);
+        }
+
+        // Create downloader with progress callback
+        const downloader = new PackageDownloader(fsPersist, (progress) => {
+          if (progressBar) {
+            progressBar.update(`Downloading ${pkgName}`, progress.percent, progress.loaded, progress.total);
+          }
+        });
+
+        const result = await downloader.install(pkgName);
+
+        if (progressBar) {
+          if (result.cached) {
+            progressBar.complete(`${pkgName} already installed`);
+          } else {
+            const sizeMB = (result.size / 1024 / 1024).toFixed(1);
+            progressBar.complete(`Installed ${pkgName} (${sizeMB} MB)`);
+          }
+        }
+
+        Atomics.store(message.pkg_messenger, 0, 0);  // success
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      } catch (err) {
+        log('[Pkg] Install failed: ' + err.message);
+        if (typeof term !== 'undefined' && typeof TerminalProgressBar !== 'undefined') {
+          const progressBar = new TerminalProgressBar(term);
+          progressBar.error(`Failed to install ${pkgName}: ${err.message}`);
+        }
+        Atomics.store(message.pkg_messenger, 0, 2);  // download error
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      }
+    },
+
+    pkg_restore: async (message, worker) => {
+      // Load package from IndexedDB and copy to kernel memory at destination
+      if (!fsPersist) {
+        Atomics.store(message.pkg_messenger, 0, 1);
+        Atomics.store(message.pkg_messenger, 1, 0);
+        Atomics.notify(message.pkg_messenger, 0, 1);
+        return;
+      }
+
+      try {
+        const file = await fsPersist.loadFile(`/opt/pkg/${message.pkgName}.wasm`);
+        if (file) {
+          const memory_u8 = new Uint8Array(memory.buffer);
+          memory_u8.set(file.content, message.buffer);
+          Atomics.store(message.pkg_messenger, 0, 0);  // success
+          Atomics.store(message.pkg_messenger, 1, file.content.length);  // bytes written
+          log(`[Pkg] Restored ${message.pkgName} (${file.content.length} bytes)`);
+        } else {
+          Atomics.store(message.pkg_messenger, 0, 2);  // not found
+          Atomics.store(message.pkg_messenger, 1, 0);
+        }
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      } catch (err) {
+        log('[Pkg] Restore failed: ' + err.message);
+        Atomics.store(message.pkg_messenger, 0, 1);  // error
+        Atomics.store(message.pkg_messenger, 1, 0);
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      }
+    },
+
+    pkg_list_cached: async (message, worker) => {
+      // List all cached packages
+      if (!fsPersist) {
+        Atomics.store(message.pkg_messenger, 0, 1);
+        Atomics.store(message.pkg_messenger, 1, 0);
+        Atomics.notify(message.pkg_messenger, 0, 1);
+        return;
+      }
+
+      try {
+        const downloader = new PackageDownloader(fsPersist);
+        const packages = await downloader.listCachedPackages();
+
+        // Write as "pkgName:binName\n" format
+        const list = packages.map(p => `${p.name}:${p.binName}`).join('\n');
+        const encoded = text_encoder.encode(list);
+        const memory_u8 = new Uint8Array(memory.buffer);
+        const toWrite = Math.min(encoded.length, message.count);
+        memory_u8.set(encoded.slice(0, toWrite), message.buffer);
+
+        Atomics.store(message.pkg_messenger, 0, 0);  // success
+        Atomics.store(message.pkg_messenger, 1, toWrite);  // bytes written
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      } catch (err) {
+        log('[Pkg] List cached failed: ' + err.message);
+        Atomics.store(message.pkg_messenger, 0, 1);
+        Atomics.store(message.pkg_messenger, 1, 0);
+        Atomics.notify(message.pkg_messenger, 0, 1);
+      }
+    },
   };
 
   /// Memory shared between all CPUs (kernel memory).
@@ -376,10 +513,10 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
   /**
    * Create isolated user memory for a new process.
    * @param {number} task_ptr - The task pointer (process identifier)
-   * @param {number} initial_pages - Initial memory size in 64KB pages
+   * @param {number} initial_pages - Initial memory size in 64KB pages (default 256 = 16MB)
    * @returns {WebAssembly.Memory} The new user memory instance
    */
-  const create_user_memory = (task_ptr, initial_pages = 16) => {
+  const create_user_memory = (task_ptr, initial_pages = 256) => {
     // For Phase 1, we use shared memory so the main thread can still
     // access it for networking/console callbacks. True isolation (with
     // non-shared memory) will be implemented in Phase 2 when we move
@@ -433,8 +570,30 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
    */
   const free_task_memory = (task_ptr) => {
     if (user_memories.has(task_ptr)) {
+      const entry = user_memories.get(task_ptr);
+
+      // Check if this memory is shared with other tasks
+      if (entry.shared_with) {
+        // This task was sharing memory - just remove the reference
+        log(`[MemIso] Task ${task_ptr} released shared memory reference (shared with ${entry.shared_with})`);
+      } else {
+        // Check if any other task is sharing this memory
+        let still_in_use = false;
+        for (const [other_task, other_entry] of user_memories.entries()) {
+          if (other_task !== task_ptr && other_entry.memory === entry.memory) {
+            still_in_use = true;
+            break;
+          }
+        }
+
+        if (still_in_use) {
+          log(`[MemIso] Task ${task_ptr} memory still in use by other threads, not freeing`);
+        } else {
+          log(`[MemIso] Freed user memory for task ${task_ptr}`);
+        }
+      }
+
       user_memories.delete(task_ptr);
-      log(`[MemIso] Freed user memory for task ${task_ptr}`);
     }
     if (syscall_buffers.has(task_ptr)) {
       // Note: We don't actually free syscall buffer space (could be improved with a free list)
@@ -481,6 +640,9 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
     }
   };
 
+  // Clone flags from Linux (include/uapi/linux/sched.h)
+  const CLONE_VM = 0x00000100;  // Set if VM shared between processes
+
   /**
    * Create and run one task. This task has been switch_to():ed by the scheduler for the first time.
    *
@@ -488,10 +650,11 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
    * are brought up, they can run concurrently (and will effectively be managed by the Wasm host OS). While we are not
    * able to suspend them from JS, the host OS will do that.
    */
-  const make_task = (prev_task, new_task, name, user_executable) => {
+  const make_task = (prev_task, new_task, name, user_executable, clone_flags = 0) => {
     let user_memory = null;
     let syscall_buffer_offset = null;
     let is_memory_copy = false;
+    let is_shared_memory = false;
 
     // Create isolated memory for user processes (those with user_executable)
     if (user_executable) {
@@ -499,25 +662,35 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       const parent_memory_entry = user_memories.get(prev_task);
 
       if (parent_memory_entry) {
-        // Fork/Clone: Copy parent's memory to child
-        // For now, we always copy (fork semantics). With CLONE_VM, we'd share instead.
-        // TODO: Detect CLONE_VM and share memory instead of copying
-        const parent_mem = parent_memory_entry.memory;
-        const parent_pages = parent_mem.buffer.byteLength / 0x10000;
+        if (clone_flags & CLONE_VM) {
+          // CLONE_VM: Share memory with parent (threads)
+          user_memory = parent_memory_entry.memory;
+          user_memories.set(new_task, {
+            memory: user_memory,
+            pages: parent_memory_entry.pages,
+            shared_with: prev_task,  // Track that this is shared
+          });
+          is_shared_memory = true;
+          log(`[MemIso] Clone with CLONE_VM: Task ${new_task} shares memory with ${prev_task}`);
+        } else {
+          // Fork: Copy parent's memory to child (separate address space)
+          const parent_mem = parent_memory_entry.memory;
+          const parent_pages = parent_mem.buffer.byteLength / 0x10000;
 
-        // Create child memory with same size as parent
-        user_memory = create_user_memory(new_task, parent_pages);
+          // Create child memory with same size as parent
+          user_memory = create_user_memory(new_task, parent_pages);
 
-        // Copy parent memory contents to child
-        const parent_view = new Uint8Array(parent_mem.buffer);
-        const child_view = new Uint8Array(user_memory.buffer);
-        child_view.set(parent_view);
+          // Copy parent memory contents to child
+          const parent_view = new Uint8Array(parent_mem.buffer);
+          const child_view = new Uint8Array(user_memory.buffer);
+          child_view.set(parent_view);
 
-        is_memory_copy = true;
-        log(`[MemIso] Fork: Copied ${parent_pages} pages from task ${prev_task} to ${new_task}`);
+          is_memory_copy = true;
+          log(`[MemIso] Fork: Copied ${parent_pages} pages from task ${prev_task} to ${new_task}`);
+        }
       } else {
-        // New process (exec from kthread): Create fresh memory
-        user_memory = create_user_memory(new_task, 16);
+        // New process (exec from kthread): Create fresh memory with default size
+        user_memory = create_user_memory(new_task);  // Uses default 256 pages = 16MB
       }
 
       // Allocate syscall buffer in kernel memory
@@ -534,6 +707,7 @@ const linux = async (worker_url, vmlinux, boot_cmdline, initrd, log, console_wri
       syscall_buffer_offset: syscall_buffer_offset,
       syscall_buffer_size: SYSCALL_BUFFER_SIZE,
       is_memory_copy: is_memory_copy,  // Hint that memory was copied from parent
+      is_shared_memory: is_shared_memory,  // Hint that memory is shared (CLONE_VM)
     };
     tasks[new_task] = make_vmlinux_runner(name + " (" + new_task + ")", options);
   };

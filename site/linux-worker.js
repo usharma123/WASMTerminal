@@ -319,13 +319,14 @@
     },
 
     /// Creation of tasks on our end. Runs them too.
-    wasm_create_and_run_task: (prev_task, new_task, name, bin_start, bin_end, data_start, table_start) => {
+    wasm_create_and_run_task: (prev_task, new_task, name, bin_start, bin_end, data_start, table_start, clone_flags) => {
       // Tell main to create the new task, and then run it for the first time!
       port.postMessage({
         method: "create_and_run_task",
         prev_task: prev_task,
         new_task: new_task,
         name: get_cstring(memory, name),
+        clone_flags: clone_flags,
 
         // For user tasks, there is user code to load first before trying to run it.
         user_executable: bin_start ? {
@@ -710,6 +711,92 @@
 
       return status === 0 ? bytesWritten : -1;
     },
+
+    // Package management syscalls
+    // Messenger format: [status, bytesWritten/extra]
+    // Status: 0=success, 1=not cached/error, 2=download error, 3=unknown package
+
+    wasm_pkg_check: (pkg_name_ptr) => {
+      // Check if package is cached in IndexedDB
+      const pkgName = get_cstring(memory, pkg_name_ptr);
+
+      Atomics.store(fs_messenger, 0, -1);
+
+      port.postMessage({
+        method: "pkg_check",
+        pkgName: pkgName,
+        pkg_messenger: fs_messenger,
+      });
+
+      Atomics.wait(fs_messenger, 0, -1);
+
+      // Returns 0 if cached, 1 if not cached
+      return Atomics.load(fs_messenger, 0);
+    },
+
+    wasm_pkg_install: (pkg_name_ptr) => {
+      // Download and install package from CDN
+      const pkgName = get_cstring(memory, pkg_name_ptr);
+
+      Atomics.store(fs_messenger, 0, -1);
+
+      port.postMessage({
+        method: "pkg_install",
+        pkgName: pkgName,
+        pkg_messenger: fs_messenger,
+      });
+
+      // This can take a while for large packages
+      Atomics.wait(fs_messenger, 0, -1);
+
+      // Returns: 0=success, 2=download error, 3=unknown package
+      return Atomics.load(fs_messenger, 0);
+    },
+
+    wasm_pkg_restore: (pkg_name_ptr, dest_buffer, max_size) => {
+      // Load package from IndexedDB cache into memory
+      const pkgName = get_cstring(memory, pkg_name_ptr);
+
+      Atomics.store(fs_messenger, 0, -1);
+      Atomics.store(fs_messenger, 1, 0);
+
+      port.postMessage({
+        method: "pkg_restore",
+        pkgName: pkgName,
+        buffer: dest_buffer,
+        pkg_messenger: fs_messenger,
+      });
+
+      Atomics.wait(fs_messenger, 0, -1);
+
+      const status = Atomics.load(fs_messenger, 0);
+      const bytesWritten = Atomics.load(fs_messenger, 1);
+
+      // Returns bytes written on success, -1 on error, -2 if not found
+      if (status === 0) return bytesWritten;
+      if (status === 2) return -2;  // not found
+      return -1;  // error
+    },
+
+    wasm_pkg_list_cached: (buffer, count) => {
+      // List all cached packages
+      Atomics.store(fs_messenger, 0, -1);
+      Atomics.store(fs_messenger, 1, 0);
+
+      port.postMessage({
+        method: "pkg_list_cached",
+        buffer: buffer,
+        count: count,
+        pkg_messenger: fs_messenger,
+      });
+
+      Atomics.wait(fs_messenger, 0, -1);
+
+      const status = Atomics.load(fs_messenger, 0);
+      const bytesWritten = Atomics.load(fs_messenger, 1);
+
+      return status === 0 ? bytesWritten : -1;
+    },
   };
 
   /// Callbacks from the main thread.
@@ -838,11 +925,101 @@
       };
 
       const user_executable_setup = () => {
-        const stack_pointer = vmlinux_instance.exports.get_user_stack_pointer();
-        const tls_base = vmlinux_instance.exports.get_user_tls_base();
+        const kernel_stack_pointer = vmlinux_instance.exports.get_user_stack_pointer();
+        const kernel_tls_base = vmlinux_instance.exports.get_user_tls_base();
 
-        // Select appropriate memory: isolated user memory if available, otherwise shared kernel memory
-        const exec_memory = user_memory || memory;
+        // Memory isolation configuration
+        // DISABLED: The kernel's argv/envp setup creates pointers to kernel memory.
+        // When we copy stack to user memory, those pointers still point to kernel
+        // addresses which won't work. Proper fix requires rewriting the pointers.
+        // TODO: Enable isolation after implementing proper argv/envp translation
+        const use_memory_isolation = false;  // Temporarily disabled
+
+        // For isolation, we need to translate kernel addresses to user memory addresses
+        // The kernel allocates at high addresses (e.g., 0x70000000+)
+        // We use low addresses in user memory (starting at USER_DATA_BASE)
+        const USER_DATA_BASE = 0x10000;  // 64KB - room for null pointer detection
+
+        let exec_memory;
+        let effective_data_start;
+        let effective_stack_pointer;
+        let effective_tls_base;
+
+        if (use_memory_isolation) {
+          exec_memory = user_memory;
+
+          // Calculate memory layout for user space
+          // kernel's data_start is where data is in kernel memory
+          // We map it to USER_DATA_BASE in user memory
+          const kernel_data_start = user_executable_params.data_start;
+
+          // Get data size from kernel mm (end_data - start_data)
+          // For now, estimate from the user memory we were given
+          const user_mem_pages = user_memory.buffer.byteLength / 0x10000;
+
+          // Use fixed low address for data in user memory
+          effective_data_start = USER_DATA_BASE;
+
+          // Stack is at end of user memory
+          // Calculate where kernel put stack relative to data
+          const kernel_stack_offset = kernel_stack_pointer - kernel_data_start;
+
+          // If kernel addresses are very high (isolation mode), use user memory layout
+          if (kernel_data_start > 0x1000000) {  // More than 16MB = kernel allocated
+            // Map to user memory: data at USER_DATA_BASE, stack in upper half
+            const user_mem_size = user_memory.buffer.byteLength;
+
+            // Stack area: upper portion of user memory
+            // Leave room for stack growth (stack grows DOWN)
+            // Put initial stack data at 3/4 of memory, with room to grow down and have data above
+            const STACK_REGION_START = Math.floor(user_mem_size * 0.75);  // 12MB mark in 16MB
+            const STACK_INIT_SIZE = 0x10000;  // 64KB for initial stack data (argv/envp/etc)
+
+            effective_tls_base = effective_data_start;  // TLS at data base initially
+
+            // Copy argv/envp/auxv from kernel stack to user stack
+            // The kernel set up the stack at kernel_stack_pointer
+            if (kernel_stack_pointer > 0 && kernel_stack_pointer < memory.buffer.byteLength) {
+              // Calculate how much data the kernel put on the stack
+              // The kernel's stack area ends at some point after start_stack
+              const kernel_stack_data_size = Math.min(STACK_INIT_SIZE, memory.buffer.byteLength - kernel_stack_pointer);
+
+              // Copy stack setup from kernel to user memory
+              const kernel_stack_view = new Uint8Array(memory.buffer, kernel_stack_pointer, kernel_stack_data_size);
+              const user_stack_base = STACK_REGION_START;
+              const user_stack_view = new Uint8Array(user_memory.buffer, user_stack_base, kernel_stack_data_size);
+              user_stack_view.set(kernel_stack_view);
+
+              // Set stack pointer to where we copied the data
+              effective_stack_pointer = user_stack_base;
+
+              log(`[MemIso] Copied ${kernel_stack_data_size} bytes of stack from kernel 0x${kernel_stack_pointer.toString(16)} to user 0x${user_stack_base.toString(16)}`);
+            } else {
+              // No kernel stack data - just set stack pointer
+              effective_stack_pointer = STACK_REGION_START;
+              log(`[MemIso] No kernel stack to copy, using stack at 0x${effective_stack_pointer.toString(16)}`);
+            }
+
+            log(`[MemIso] User memory: ${user_mem_size} bytes, data=0x${effective_data_start.toString(16)}, stack=0x${effective_stack_pointer.toString(16)}`);
+          } else {
+            // Kernel addresses are already low - use them directly
+            effective_data_start = kernel_data_start;
+            effective_stack_pointer = kernel_stack_pointer;
+            effective_tls_base = kernel_tls_base;
+          }
+
+          log(`[MemIso] User memory layout: data=0x${effective_data_start.toString(16)}, stack=0x${effective_stack_pointer.toString(16)}`);
+        } else {
+          // No isolation - use kernel memory directly
+          exec_memory = memory;
+          effective_data_start = user_executable_params.data_start;
+          effective_stack_pointer = kernel_stack_pointer;
+          effective_tls_base = kernel_tls_base;
+        }
+
+        // Aliases for compatibility
+        const stack_pointer = effective_stack_pointer;
+        const tls_base = effective_tls_base;
 
         // Track current offset within syscall buffer for multi-pointer syscalls
         let syscall_buffer_current = 0;
@@ -950,8 +1127,8 @@
 
         // Create syscall wrapper that translates pointers
         const make_syscall_wrapper = (kernel_syscall, arg_count) => {
-          if (!user_memory) {
-            // No isolation - use direct syscall
+          if (!use_memory_isolation) {
+            // Memory isolation disabled - use direct syscall without pointer translation
             return kernel_syscall;
           }
 
@@ -1244,10 +1421,10 @@
           env: {
             // Use isolated memory for user executable when available
             memory: exec_memory,
-            __memory_base: new WebAssembly.Global({ value: 'i32', mutable: false }, user_executable_params.data_start),
+            __memory_base: new WebAssembly.Global({ value: 'i32', mutable: false }, effective_data_start),
             __stack_pointer: new WebAssembly.Global({ value: 'i32', mutable: true }, stack_pointer),
             __indirect_function_table: new WebAssembly.Table({ initial: 4096, element: "anyfunc" }), // TODO: fix this!
-            __table_base: new WebAssembly.Global({ value: 'i32', mutable: false }, user_executable_params.table_start),
+            __table_base: new WebAssembly.Global({ value: 'i32', mutable: false }, use_memory_isolation ? 0 : user_executable_params.table_start),
 
             // To be correct, we should save AND restore these globals between the user instance and vmlinux instance:
             // __stack_pointer <-> __user_stack_pointer
@@ -1279,6 +1456,48 @@
               throw WebAssembly.RuntimeError('abort');
             },
           },
+
+          // GOT (Global Offset Table) modules for dynamic linking
+          // These provide relocated addresses for global variables and functions
+          "GOT.mem": new Proxy({}, {
+            get: (target, prop) => {
+              // Return a mutable global initialized to memory_base
+              // The actual value will be set by __wasm_apply_data_relocs
+              if (!(prop in target)) {
+                target[prop] = new WebAssembly.Global(
+                  { value: 'i32', mutable: true },
+                  effective_data_start
+                );
+              }
+              return target[prop];
+            }
+          }),
+
+          "GOT.func": new Proxy({}, {
+            get: (target, prop) => {
+              // Return a mutable global for function table indices
+              if (!(prop in target)) {
+                target[prop] = new WebAssembly.Global(
+                  { value: 'i32', mutable: true },
+                  0
+                );
+              }
+              return target[prop];
+            }
+          }),
+
+          "GOT.data": new Proxy({}, {
+            get: (target, prop) => {
+              // Return a mutable global for data relocations
+              if (!(prop in target)) {
+                target[prop] = new WebAssembly.Global(
+                  { value: 'i32', mutable: true },
+                  effective_data_start
+                );
+              }
+              return target[prop];
+            }
+          }),
         };
 
         // Instantiate a user Wasm Module. This will implicitly run __wasm_init_memory, which will effectively:
